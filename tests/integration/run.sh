@@ -62,6 +62,24 @@ self_vlans() { bridge -j vlan show dev br-lan | jq -r '[.[] | select(.ifname == 
 switched_vlan() { echo "$IFACES/interface=$1/openconfig-if-ethernet:ethernet/openconfig-vlan:switched-vlan/config"; }
 link_exists() { ip link show "$1" >/dev/null 2>&1 && echo true || echo false; }
 addresses() { ip -j addr show dev "$1" 2>/dev/null | jq -r '[.[0].addr_info[]? | select(.family == "inet") | "\(.local)/\(.prefixlen)"] | join(" ")'; }
+dynamic_addresses() { ip -j addr show dev "$1" 2>/dev/null | jq -r '[.[0].addr_info[]? | select(.family == "inet" and .dynamic) | "\(.local)/\(.prefixlen)"] | join(" ")'; }
+default_route() { ip -j route show default | jq -r '[.[] | "\(.gateway) \(.dev)"] | join(" ")'; }
+udhcpc_count() { pgrep -xc udhcpc || true; }
+
+# wait_until <seconds> <command...>: until the command succeeds
+wait_until() {
+    limit=$(($1 * 10))
+    shift
+    i=0
+    until "$@"; do
+        i=$((i + 1))
+        [ $i -le $limit ] || return 1
+        sleep 0.1
+    done
+}
+has_dynamic_address() { [ -n "$(dynamic_addresses vlan1)" ]; }
+no_dynamic_address() { [ -z "$(dynamic_addresses vlan1)" ]; }
+no_udhcpc() { [ "$(udhcpc_count)" = 0 ]; }
 
 wait_for_restconf() {
     i=0
@@ -100,6 +118,61 @@ echo "# state data"
 request GET "$IFACES/interface=lan1/state" >/dev/null
 check "lan1 admin-status" UP "$(jq -r '.["openconfig-interfaces:state"]["admin-status"]' /tmp/body)"
 check "lan1 has counters" true "$(jq -r '.["openconfig-interfaces:state"].counters | has("in-octets")' /tmp/body)"
+
+echo "# DHCP client"
+VLAN1_IPV4_ALL="$IFACES/interface=vlan1/openconfig-vlan:routed-vlan/openconfig-if-ip:ipv4"
+# PATCH on ipv4, not ipv4/config: the target of a PATCH must exist.
+dhcp_client() { request PATCH "$VLAN1_IPV4_ALL" "{\"openconfig-if-ip:ipv4\":{\"config\":{\"dhcp-client\":$1}}}"; }
+status=$(dhcp_client true)
+check "enable dhcp-client on vlan1" 204 "$status"
+check "one udhcpc" 1 "$(udhcpc_count)"
+lease=""
+if wait_until 20 has_dynamic_address; then
+    lease=$(dynamic_addresses vlan1)
+    case "$lease" in
+        10.99.0.1[01][0-9]/24) echo "ok   vlan1 leased $lease" ;;
+        *) check "vlan1 lease in 10.99.0.100-110/24" "10.99.0.1xx/24" "$lease" ;;
+    esac
+else
+    check "vlan1 gets a DHCP address" "10.99.0.1xx/24" ""
+fi
+check "static address kept" 192.168.1.1/24 "$(ip -j addr show dev vlan1 | jq -r '[.[0].addr_info[] | select(.family == "inet" and (.dynamic | not)) | "\(.local)/\(.prefixlen)"] | join(" ")')"
+check "default route via the DHCP router" "10.99.0.1 vlan1" "$(default_route)"
+check "resolv.conf" "search lab.example nameserver 10.99.0.53" "$(tr '\n' ' ' </tmp/resolv.conf 2>/dev/null | sed 's/ $//')"
+request GET "$VLAN1_IPV4_ALL" >/dev/null
+check "state: dhcp-client" true "$(jq -r '.["openconfig-if-ip:ipv4"].state["dhcp-client"]' /tmp/body)"
+check "state: DHCP address" "${lease%/*}" "$(jq -r '[.["openconfig-if-ip:ipv4"].addresses.address[] | select(.state.origin == "DHCP") | .ip] | join(" ")' /tmp/body)"
+check "state: static address" 192.168.1.1 "$(jq -r '[.["openconfig-if-ip:ipv4"].addresses.address[] | select(.state.origin == "STATIC") | .ip] | join(" ")' /tmp/body)"
+check "state: lease" "10.99.0.1 10.99.0.53 lab.example 600" "$(jq -r '.["openconfig-if-ip:ipv4"].state["clixon-switch:dhcp-lease"] | "\(.router[0]) \(.["dns-server"][0]) \(.domain) \(.["lease-time"])"' /tmp/body)"
+check "state: remaining time" true "$(jq -r '.["openconfig-if-ip:ipv4"].state["clixon-switch:dhcp-lease"]["remaining-time"] | . > 0 and . <= 600' /tmp/body)"
+
+request PATCH "$IFACES/interface=lan1/config" '{"openconfig-interfaces:config":{"description":"uplink"}}' >/dev/null
+check "unrelated commit keeps the lease" "$lease" "$(dynamic_addresses vlan1)"
+check "unrelated commit keeps udhcpc" 1 "$(udhcpc_count)"
+
+declare_vlans 99
+rejected "second DHCP client" PUT "$IFACES/interface=vlan99" \
+    '{"openconfig-interfaces:interface":[{"name":"vlan99","config":{"name":"vlan99","type":"iana-if-type:l3ipvlan"},"openconfig-vlan:routed-vlan":{"config":{"vlan":99},"openconfig-if-ip:ipv4":{"config":{"dhcp-client":true}}}}]}'
+request DELETE "$VLANS/vlan=99" >/dev/null
+
+# A restarted backend stops the udhcpc the old one left behind; the startup
+# configuration has no DHCP client.
+restart_backend
+check "restart: orphaned udhcpc stopped" true "$(wait_until 5 no_udhcpc && echo true || echo false)"
+check "restart: lease address gone" true "$(wait_until 5 no_dynamic_address && echo true || echo false)"
+check "restart: default route gone" "" "$(default_route)"
+
+dhcp_client true >/dev/null
+wait_until 20 has_dynamic_address || true
+status=$(dhcp_client false)
+check "disable dhcp-client" 204 "$status"
+check "no udhcpc" 0 "$(udhcpc_count)"
+check "lease address removed" "" "$(dynamic_addresses vlan1)"
+check "default route removed" "" "$(default_route)"
+check "resolv.conf emptied" "" "$(cat /tmp/resolv.conf)"
+request GET "$VLAN1_IPV4_ALL" >/dev/null
+check "state: no lease" null "$(jq -r '.["openconfig-if-ip:ipv4"].state["clixon-switch:dhcp-lease"]' /tmp/body)"
+request DELETE "$IFACES/interface=lan1/config/description" >/dev/null
 
 echo "# invalid configuration is rejected and not applied"
 rejected "unknown port" PUT "$IFACES/interface=lan9" \

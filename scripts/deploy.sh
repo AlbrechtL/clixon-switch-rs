@@ -6,9 +6,10 @@
 #   devtool build clixon-switch
 #   scripts/deploy.sh [root@192.168.1.1]
 #
-# Copies the plugin to /tmp/clixon-switch on the switch, stops the installed
-# clixon_backend and runs one in the foreground that loads the copy, with
-# its log on this terminal. Ctrl-C stops it; "/etc/init.d/clixon-backend
+# Copies the plugin and the udhcpc script (which the plugin expects next to
+# its backend directory) to /tmp/clixon-switch on the switch, stops the
+# installed clixon_backend and runs one in the foreground that loads the
+# copy, with its log on this terminal. Ctrl-C stops it; "/etc/init.d/clixon-backend
 # start" on the switch brings back the installed plugin.
 #
 # Only the plugin is replaced. Changes to YANG, clixon.xml or the CLI spec
@@ -34,6 +35,7 @@ echo "deploying $plugin"
 
 ssh "$target" 'mkdir -p /tmp/clixon-switch/backend'
 scp -q "$plugin" "$target:/tmp/clixon-switch/backend/clixon-switch_backend.so"
+scp -q "$(dirname "$0")/udhcpc-script.sh" "$target:/tmp/clixon-switch/udhcpc-script"
 
 # -s running keeps the configuration the installed backend was running.
 exec ssh -t "$target" '

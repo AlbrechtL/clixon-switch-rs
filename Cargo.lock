@@ -161,6 +161,7 @@ dependencies = [
 name = "switch-net"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "netlink-packet-core",
  "netlink-packet-route",
  "netlink-sys",

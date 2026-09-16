@@ -242,6 +242,49 @@ fn same_address_on_two_svis() {
     assert!(error(&json).contains("already configured"));
 }
 
+/// An SVI with the DHCP client and, if `ip` is not empty, a static address.
+fn dhcp_svi(name: &str, vlan: &str, ip: &str) -> String {
+    let addresses = match ip {
+        "" => String::new(),
+        ip => format!(
+            r#", "addresses": {{"address": [{{"ip": "{ip}", "config": {{"ip": "{ip}", "prefix-length": 24}}}}]}}"#
+        ),
+    };
+    format!(
+        r#"{{"name": "{name}",
+            "config": {{"name": "{name}", "type": "iana-if-type:l3ipvlan"}},
+            "openconfig-vlan:routed-vlan": {{
+                "config": {{"vlan": {vlan}}},
+                "openconfig-if-ip:ipv4": {{"config": {{"dhcp-client": true}}{addresses}}}}}}}"#
+    )
+}
+
+#[test]
+fn dhcp_client() {
+    let dhcp = state(&one_interface(&dhcp_svi("vlan1", "1", ""))).unwrap();
+    assert!(dhcp.svis["vlan1"].dhcp_client);
+    assert!(dhcp.svis["vlan1"].addresses.is_empty());
+    assert_eq!(dhcp.dhcp_svi(), Some("vlan1"));
+
+    // Static addresses next to the DHCP client.
+    let mixed = state(&one_interface(&dhcp_svi("vlan1", "1", "10.0.0.1"))).unwrap();
+    assert!(mixed.svis["vlan1"].dhcp_client);
+    assert_eq!(mixed.svis["vlan1"].addresses.len(), 1);
+
+    let static_only = state(&one_interface(&svi("vlan1", "1", "10.0.0.1"))).unwrap();
+    assert!(!static_only.svis["vlan1"].dhcp_client);
+    assert_eq!(static_only.dhcp_svi(), None);
+}
+
+#[test]
+fn one_dhcp_client_only() {
+    let json = interfaces(&[dhcp_svi("vlan1", "1", ""), dhcp_svi("vlan2", "2", "")]);
+    let errors = state(&json).unwrap_err().0;
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].interface, "vlan2");
+    assert!(errors[0].message.contains("already enabled on vlan1"));
+}
+
 #[test]
 fn all_errors_are_reported() {
     let json = interfaces(&[access_port("lan9", "1"), svi("br-lan", "1", "10.0.0.1")]);

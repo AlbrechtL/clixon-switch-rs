@@ -153,3 +153,13 @@ fn unsupported_and_semantic_errors_together() {
     let errors = validate(&tree.to_string(), &ports()).unwrap_err();
     assert_eq!(errors.0.len(), 2, "{errors}");
 }
+
+#[test]
+fn dhcp_client_is_supported() {
+    let mut tree = target();
+    let vlan1 = interface(&mut tree, "vlan1");
+    vlan1["openconfig-vlan:routed-vlan"]["openconfig-if-ip:ipv4"]["config"]["dhcp-client"] =
+        json!(true);
+    let state = validate(&tree.to_string(), &ports()).unwrap();
+    assert!(state.svis["vlan1"].dhcp_client);
+}

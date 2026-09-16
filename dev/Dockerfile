@@ -8,6 +8,7 @@ ARG CLIXON_REV=62a901b1c6215703a7c37e1ff4d51a155587af7d
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bison flex libssl-dev iproute2 jq procps \
+       busybox udhcpc \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone https://github.com/clicon/cligen.git /tmp/cligen \

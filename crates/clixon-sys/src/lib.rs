@@ -6,8 +6,8 @@
 //! When moving to another clixon version, compare against
 //! `clixon/clixon_plugin.h` (struct clixon_plugin_api),
 //! `clixon/clixon_backend_transaction.h`, `clixon/clixon_json.h`,
-//! `clixon/clixon_xml_io.h`, `clixon/clixon_log.h`, `clixon/clixon_err.h` and
-//! `cligen/cligen_buf.h`.
+//! `clixon/clixon_xml_io.h`, `clixon/clixon_log.h`, `clixon/clixon_err.h`,
+//! `clixon/clixon_options.h` and `cligen/cligen_buf.h`.
 
 #![allow(non_camel_case_types)]
 
@@ -142,6 +142,9 @@ extern "C" {
         xt: *mut *mut cxobj,
         xerr: *mut *mut cxobj,
     ) -> c_int;
+
+    // clixon_options.h. NULL if the option is not set.
+    pub fn clicon_option_str(h: clixon_handle, name: *const c_char) -> *mut c_char;
 
     // clixon_log.h
     pub fn clixon_log_fn(

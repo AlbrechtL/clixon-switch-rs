@@ -89,6 +89,7 @@ impl NetBackend for FakeNet {
                 }
                 s.bridge_vlans.remove(name);
                 s.addresses.remove(name);
+                s.dhcp_addresses.remove(name);
                 let children: Vec<String> = s
                     .links
                     .iter()
@@ -179,12 +180,20 @@ impl NetBackend for FakeNet {
                 if !s.links.contains_key(dev) {
                     return err("Cannot find device");
                 }
-                if !s.addresses.entry(dev.clone()).or_default().insert(*prefix) {
+                let dhcp = s.dhcp_addresses.get(dev);
+                if dhcp.is_some_and(|a| a.contains_key(prefix))
+                    || !s.addresses.entry(dev.clone()).or_default().insert(*prefix)
+                {
                     return err("File exists");
                 }
             }
             Op::DelAddress { dev, prefix } => {
-                if !s.addresses.get_mut(dev).is_some_and(|a| a.remove(prefix)) {
+                let permanent = s.addresses.get_mut(dev).is_some_and(|a| a.remove(prefix));
+                let dhcp = s
+                    .dhcp_addresses
+                    .get_mut(dev)
+                    .is_some_and(|a| a.remove(prefix).is_some());
+                if !permanent && !dhcp {
                     return err("Cannot assign requested address");
                 }
             }

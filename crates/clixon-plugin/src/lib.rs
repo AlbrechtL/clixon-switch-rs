@@ -61,6 +61,21 @@ impl Handle {
         }
     }
 
+    /// A clixon option from clixon.xml or the command line, e.g.
+    /// "CLICON_XMLDB_DIR". None if it is not set.
+    pub fn option(self, name: &str) -> Option<String> {
+        let name = c_string(name);
+        let value = unsafe { sys::clicon_option_str(self.0, name.as_ptr()) };
+        if value.is_null() {
+            return None;
+        }
+        Some(
+            unsafe { CStr::from_ptr(value) }
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+
     /// Sets the clixon error that the failing callback reports.
     fn error(self, plugin: &CStr, message: &str) {
         let message = c_string(message);

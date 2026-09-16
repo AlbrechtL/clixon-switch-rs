@@ -11,7 +11,9 @@ use netlink_packet_core::{
     NetlinkHeader, NetlinkMessage, NetlinkPayload, NLM_F_ACK, NLM_F_CREATE, NLM_F_DUMP, NLM_F_EXCL,
     NLM_F_REQUEST,
 };
-use netlink_packet_route::address::{AddressAttribute, AddressMessage};
+use netlink_packet_route::address::{
+    AddressAttribute, AddressFlags, AddressHeaderFlags, AddressMessage,
+};
 use netlink_packet_route::link::{
     AfSpecBridge, BridgeFlag, BridgeVlanInfo, BridgeVlanInfoFlags, InfoBridge, InfoData, InfoDsa,
     InfoKind, InfoVlan, LinkAttribute, LinkExtentMask, LinkFlags, LinkInfo, LinkMessage, State,
@@ -304,15 +306,42 @@ impl NetBackend for NetlinkBackend {
                     _ => None,
                 })
             };
-            if let Some(addr) = v4(true).or_else(|| v4(false)) {
+            let Some(addr) = v4(true).or_else(|| v4(false)) else {
+                continue;
+            };
+            let prefix = Ipv4Prefix {
+                addr,
+                prefix_len: address.header.prefix_len,
+            };
+            // IFA_FLAGS carries all 32 bits; the header only the lower 8.
+            let permanent = address
+                .attributes
+                .iter()
+                .find_map(|a| match a {
+                    AddressAttribute::Flags(f) => Some(f.contains(AddressFlags::Permanent)),
+                    _ => None,
+                })
+                .unwrap_or_else(|| address.header.flags.contains(AddressHeaderFlags::Permanent));
+            if permanent {
                 state
                     .addresses
                     .entry(name.clone())
                     .or_default()
-                    .insert(Ipv4Prefix {
-                        addr,
-                        prefix_len: address.header.prefix_len,
-                    });
+                    .insert(prefix);
+            } else {
+                let valid = address
+                    .attributes
+                    .iter()
+                    .find_map(|a| match a {
+                        AddressAttribute::CacheInfo(c) => Some(c.ifa_valid),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                state
+                    .dhcp_addresses
+                    .entry(name.clone())
+                    .or_default()
+                    .insert(prefix, valid);
             }
         }
 

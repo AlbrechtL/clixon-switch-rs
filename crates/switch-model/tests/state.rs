@@ -1,6 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use switch_model::{state_xml, DesiredState, InterfaceState, Port, Svi, Vlan, VlanMode};
+use std::net::Ipv4Addr;
+
+use switch_model::{
+    state_xml, AddressOrigin, DesiredState, DhcpLease, InterfaceState, Ipv4Prefix, Port, Svi, Vlan,
+    VlanMode,
+};
 
 fn applied() -> DesiredState {
     DesiredState {
@@ -38,6 +43,7 @@ fn applied() -> DesiredState {
                 enabled: true,
                 vlan: 1,
                 addresses: BTreeSet::new(),
+                dhcp_client: false,
             },
         )]),
     }
@@ -52,6 +58,7 @@ fn up(mac: Option<&str>) -> InterfaceState {
         in_pkts: 10,
         out_octets: 2000,
         out_pkts: 20,
+        ..InterfaceState::default()
     }
 }
 
@@ -119,4 +126,68 @@ fn port_based_groups() {
         r#"<port-based-vlans xmlns="urn:github:albrechtl:clixon-switch"><group><id>1</id><state><id>1</id><name>office</name><port>lan1</port><port>lan2</port></state></group></port-based-vlans>"#
     ));
     assert!(!xml.contains("<vlans "));
+}
+
+fn prefix(addr: [u8; 4], prefix_len: u8) -> Ipv4Prefix {
+    Ipv4Prefix {
+        addr: Ipv4Addr::from(addr),
+        prefix_len,
+    }
+}
+
+#[test]
+fn svi_addresses_and_dhcp_lease() {
+    let mut applied = applied();
+    applied.svis.get_mut("vlan1").unwrap().dhcp_client = true;
+    let lease = DhcpLease {
+        address: Some(prefix([10, 99, 0, 100], 24)),
+        routers: vec![Ipv4Addr::new(10, 99, 0, 1)],
+        dns_servers: vec![Ipv4Addr::new(10, 99, 0, 53), Ipv4Addr::new(10, 99, 0, 54)],
+        domain: Some("lab&co".into()),
+        server: Some(Ipv4Addr::new(10, 99, 0, 1)),
+        lease_time: Some(3600),
+        remaining_time: Some(3599),
+    };
+    let vlan1 = InterfaceState {
+        addresses: BTreeMap::from([
+            (prefix([192, 168, 1, 1], 24), AddressOrigin::Static),
+            (prefix([10, 99, 0, 100], 24), AddressOrigin::Dhcp),
+        ]),
+        dhcp_lease: Some(lease),
+        ..up(None)
+    };
+    let xml = state_xml(&applied, &BTreeMap::from([("vlan1".to_string(), vlan1)]));
+
+    assert!(xml.contains(
+        r#"<routed-vlan xmlns="http://openconfig.net/yang/vlan"><ipv4 xmlns="http://openconfig.net/yang/interfaces/ip"><addresses>"#
+    ));
+    assert!(xml.contains(
+        "<address><ip>10.99.0.100</ip><state><ip>10.99.0.100</ip><prefix-length>24</prefix-length><origin>DHCP</origin></state></address>"
+    ));
+    assert!(xml.contains(
+        "<address><ip>192.168.1.1</ip><state><ip>192.168.1.1</ip><prefix-length>24</prefix-length><origin>STATIC</origin></state></address>"
+    ));
+    assert!(xml.contains(
+        r#"</addresses><state><dhcp-client>true</dhcp-client><dhcp-lease xmlns="urn:github:albrechtl:clixon-switch"><address>10.99.0.100</address><prefix-length>24</prefix-length><router>10.99.0.1</router><dns-server>10.99.0.53</dns-server><dns-server>10.99.0.54</dns-server><domain>lab&amp;co</domain><server>10.99.0.1</server><lease-time>3600</lease-time><remaining-time>3599</remaining-time></dhcp-lease></state></ipv4></routed-vlan></interface>"#
+    ));
+}
+
+#[test]
+fn no_lease_without_dhcp_client() {
+    let vlan1 = InterfaceState {
+        dhcp_lease: Some(DhcpLease::default()),
+        ..up(None)
+    };
+    let xml = state_xml(&applied(), &BTreeMap::from([("vlan1".to_string(), vlan1)]));
+    assert!(xml.contains("<addresses></addresses><state><dhcp-client>false</dhcp-client></state>"));
+    assert!(!xml.contains("dhcp-lease"));
+}
+
+#[test]
+fn ports_have_no_ipv4_state() {
+    let xml = state_xml(
+        &applied(),
+        &BTreeMap::from([("lan1".to_string(), up(None))]),
+    );
+    assert!(!xml.contains("routed-vlan"));
 }

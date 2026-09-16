@@ -49,6 +49,7 @@ install: all
 	$(INSTALL) -D -m 0644 clixon/$(APP)_cli.cli $(DESTDIR)$(LIBDIR)/$(APP)/clispec/$(APP)_cli.cli
 	$(INSTALL) -D -m 0644 $(PLUGIN) $(DESTDIR)$(LIBDIR)/$(APP)/backend/$(APP)_backend.so
 	$(INSTALL) -D -m 0755 scripts/prepare-datastore.sh $(DESTDIR)$(LIBDIR)/$(APP)/prepare-datastore
+	$(INSTALL) -D -m 0755 scripts/udhcpc-script.sh $(DESTDIR)$(LIBDIR)/$(APP)/udhcpc-script
 	$(INSTALL) -D -m 0644 $(BUILDDIR)/factory-default.xml $(DESTDIR)$(DATADIR)/$(APP)/factory-default.xml
 	cd yang && find . -name '*.yang' | sort | while read -r f; do \
 	    $(INSTALL) -D -m 0644 "$$f" "$(DESTDIR)$(DATADIR)/$(APP)/yang/$$f" || exit 1; \

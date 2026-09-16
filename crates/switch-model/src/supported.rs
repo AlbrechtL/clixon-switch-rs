@@ -136,10 +136,7 @@ const IPV4: &[(&str, Rule)] = &[
     ),
     (
         "config",
-        Node(&[
-            ("enabled", Default("true")),
-            ("dhcp-client", Default("false")),
-        ]),
+        Node(&[("enabled", Default("true")), ("dhcp-client", Any)]),
     ),
     STATE,
     (

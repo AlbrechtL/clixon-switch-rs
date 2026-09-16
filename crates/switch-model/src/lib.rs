@@ -121,6 +121,14 @@ pub struct RoutedVlanConfig {
 pub struct Ipv4 {
     #[serde(default)]
     pub addresses: Addresses,
+    #[serde(default)]
+    pub config: Ipv4Config,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Ipv4Config {
+    pub dhcp_client: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -272,6 +280,14 @@ impl DesiredState {
     pub fn vlan_active(&self, vlan: u16) -> bool {
         self.vlans.get(&vlan).is_none_or(|v| v.active)
     }
+
+    /// The SVI that runs the DHCP client, if any.
+    pub fn dhcp_svi(&self) -> Option<&str> {
+        self.svis
+            .iter()
+            .find(|(_, svi)| svi.dhcp_client)
+            .map(|(name, _)| name.as_str())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -330,7 +346,10 @@ impl Port {
 pub struct Svi {
     pub enabled: bool,
     pub vlan: u16,
+    /// Static addresses.
     pub addresses: BTreeSet<Ipv4Prefix>,
+    /// Whether a DHCP client runs on the interface. At most one SVI has it.
+    pub dhcp_client: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -486,6 +505,7 @@ pub fn desired_state(
 
     check_unique_vlans(&state, &mut errors);
     check_unique_addresses(&state, &mut errors);
+    check_single_dhcp_client(&state, &mut errors);
 
     if errors.is_empty() {
         Ok(state)
@@ -825,6 +845,11 @@ fn svi(
     let vlan = vlan.map_err(|e| errors.push(e)).ok();
 
     let mut addresses = BTreeSet::new();
+    let dhcp_client = routed
+        .ipv4
+        .as_ref()
+        .and_then(|i| i.config.dhcp_client)
+        .unwrap_or(false);
     let entries = routed
         .ipv4
         .as_ref()
@@ -851,6 +876,7 @@ fn svi(
             enabled: interface.config.enabled.unwrap_or(true),
             vlan,
             addresses,
+            dhcp_client,
         }),
         _ => Err(errors),
     }
@@ -937,6 +963,25 @@ fn check_unique_addresses(state: &DesiredState, errors: &mut Vec<Error>) {
     }
 }
 
+/// One DHCP client at most: it owns the default route and resolv.conf.
+fn check_single_dhcp_client(state: &DesiredState, errors: &mut Vec<Error>) {
+    let mut names = state
+        .svis
+        .iter()
+        .filter(|(_, svi)| svi.dhcp_client)
+        .map(|(name, _)| name);
+    if let Some(first) = names.next() {
+        for name in names {
+            errors.push(Error {
+                interface: name.clone(),
+                message: format!(
+                    "ipv4 dhcp-client is already enabled on {first}; only one interface may run a DHCP client"
+                ),
+            });
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Operational state
 // ---------------------------------------------------------------------------
@@ -953,6 +998,41 @@ pub struct InterfaceState {
     pub in_pkts: u64,
     pub out_octets: u64,
     pub out_pkts: u64,
+    /// IPv4 addresses on the interface.
+    pub addresses: BTreeMap<Ipv4Prefix, AddressOrigin>,
+    /// The DHCP lease, while the interface's DHCP client holds one.
+    pub dhcp_lease: Option<DhcpLease>,
+}
+
+/// OpenConfig ip-address-origin.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressOrigin {
+    Static,
+    Dhcp,
+}
+
+impl AddressOrigin {
+    fn as_str(self) -> &'static str {
+        match self {
+            AddressOrigin::Static => "STATIC",
+            AddressOrigin::Dhcp => "DHCP",
+        }
+    }
+}
+
+/// A DHCP lease, as the udhcpc script recorded it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DhcpLease {
+    pub address: Option<Ipv4Prefix>,
+    pub routers: Vec<Ipv4Addr>,
+    pub dns_servers: Vec<Ipv4Addr>,
+    pub domain: Option<String>,
+    /// The DHCP server.
+    pub server: Option<Ipv4Addr>,
+    /// Seconds, as granted.
+    pub lease_time: Option<u32>,
+    /// Seconds until the address expires.
+    pub remaining_time: Option<u32>,
 }
 
 impl Default for InterfaceState {
@@ -965,6 +1045,8 @@ impl Default for InterfaceState {
             in_pkts: 0,
             out_octets: 0,
             out_pkts: 0,
+            addresses: BTreeMap::new(),
+            dhcp_lease: None,
         }
     }
 }
@@ -979,9 +1061,9 @@ pub fn state_xml(applied: &DesiredState, states: &BTreeMap<String, InterfaceStat
     let interfaces = applied
         .ports
         .keys()
-        .map(|name| (name, true))
-        .chain(applied.svis.keys().map(|name| (name, false)));
-    for (name, is_port) in interfaces {
+        .map(|name| (name, None))
+        .chain(applied.svis.iter().map(|(name, svi)| (name, Some(svi))));
+    for (name, svi) in interfaces {
         let Some(s) = states.get(name) else {
             continue;
         };
@@ -1000,12 +1082,15 @@ pub fn state_xml(applied: &DesiredState, states: &BTreeMap<String, InterfaceStat
             s.out_octets,
             s.out_pkts,
         );
-        if let (true, Some(mac)) = (is_port, &s.mac) {
+        if let (None, Some(mac)) = (svi, &s.mac) {
             let _ = write!(
                 xml,
                 r#"<ethernet xmlns="http://openconfig.net/yang/interfaces/ethernet"><state><hw-mac-address>{}</hw-mac-address></state></ethernet>"#,
                 escape(mac)
             );
+        }
+        if let Some(svi) = svi {
+            svi_ipv4_state_xml(&mut xml, svi, s);
         }
         xml.push_str("</interface>");
     }
@@ -1068,6 +1153,60 @@ pub fn state_xml(applied: &DesiredState, states: &BTreeMap<String, InterfaceStat
         _ => {}
     }
     xml
+}
+
+/// routed-vlan/ipv4 state of an SVI: its addresses with their origin, whether
+/// the DHCP client runs, and the lease.
+fn svi_ipv4_state_xml(xml: &mut String, svi: &Svi, s: &InterfaceState) {
+    use std::fmt::Write;
+
+    xml.push_str(
+        r#"<routed-vlan xmlns="http://openconfig.net/yang/vlan"><ipv4 xmlns="http://openconfig.net/yang/interfaces/ip"><addresses>"#,
+    );
+    for (prefix, origin) in &s.addresses {
+        let _ = write!(
+            xml,
+            "<address><ip>{ip}</ip><state><ip>{ip}</ip><prefix-length>{}</prefix-length><origin>{}</origin></state></address>",
+            prefix.prefix_len,
+            origin.as_str(),
+            ip = prefix.addr,
+        );
+    }
+    let _ = write!(
+        xml,
+        "</addresses><state><dhcp-client>{}</dhcp-client>",
+        svi.dhcp_client
+    );
+    if let (true, Some(lease)) = (svi.dhcp_client, &s.dhcp_lease) {
+        let _ = write!(xml, r#"<dhcp-lease xmlns="{SWITCH_NS}">"#);
+        if let Some(address) = lease.address {
+            let _ = write!(
+                xml,
+                "<address>{}</address><prefix-length>{}</prefix-length>",
+                address.addr, address.prefix_len
+            );
+        }
+        for router in &lease.routers {
+            let _ = write!(xml, "<router>{router}</router>");
+        }
+        for dns in &lease.dns_servers {
+            let _ = write!(xml, "<dns-server>{dns}</dns-server>");
+        }
+        if let Some(domain) = &lease.domain {
+            let _ = write!(xml, "<domain>{}</domain>", escape(domain));
+        }
+        if let Some(server) = lease.server {
+            let _ = write!(xml, "<server>{server}</server>");
+        }
+        if let Some(t) = lease.lease_time {
+            let _ = write!(xml, "<lease-time>{t}</lease-time>");
+        }
+        if let Some(t) = lease.remaining_time {
+            let _ = write!(xml, "<remaining-time>{t}</remaining-time>");
+        }
+        xml.push_str("</dhcp-lease>");
+    }
+    xml.push_str("</state></ipv4></routed-vlan>");
 }
 
 fn escape(text: &str) -> String {

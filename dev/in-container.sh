@@ -1,7 +1,7 @@
 #!/bin/sh
 # Inside the dev container: builds and installs the plugin, creates the
-# dummy switch ports, starts clixon_backend and clixon_restconf, then runs
-# the given command (default: a shell).
+# switch ports, starts a DHCP server behind lan8, clixon_backend and
+# clixon_restconf, then runs the given command (default: a shell).
 
 set -eu
 
@@ -15,10 +15,32 @@ make -s install BUILDDIR=/tmp/build RESTCONF_PORT=8080 LAN_PORTS="$PORTS" \
     PLUGIN="$CARGO_TARGET_DIR/release/libclixon_switch_plugin.so"
 mkdir -p /usr/local/var/run
 
+# lan1..lan7 are dummy links. lan8 is one end of a veth pair whose other
+# end, dhcp-srv, has a DHCP server: 10.99.0.100-110, router 10.99.0.1, DNS
+# 10.99.0.53.
 for port in $PORTS; do
-    ip link add "$port" type dummy
+    [ "$port" = lan8 ] || ip link add "$port" type dummy
 done
+ip link add lan8 type veth peer name dhcp-srv
+ip addr add 10.99.0.1/24 dev dhcp-srv
+ip link set dhcp-srv up
+cat >/tmp/udhcpd.conf <<EOF
+interface dhcp-srv
+start 10.99.0.100
+end 10.99.0.110
+option subnet 255.255.255.0
+option router 10.99.0.1
+option dns 10.99.0.53
+option domain lab.example
+option lease 600
+lease_file /tmp/udhcpd.leases
+EOF
+touch /tmp/udhcpd.leases
+busybox udhcpd -S /tmp/udhcpd.conf
+
 export CLIXON_SWITCH_PORTS="$PORTS"
+# Docker manages /etc/resolv.conf.
+export RESOLV_CONF=/tmp/resolv.conf
 
 /usr/local/lib/clixon-switch/prepare-datastore "$XMLDB" "$PERSISTENT" \
     /usr/local/share/clixon-switch/factory-default.xml

@@ -7,6 +7,7 @@
 //! to observe than to predict (e.g. enabling VLAN filtering on a bridge that
 //! already has ports).
 
+pub mod dhcp;
 pub mod fake;
 pub mod netlink;
 mod plan;
@@ -54,8 +55,11 @@ pub struct ActualState {
     /// Bridge VLAN entries by device: bridge ports, and the bridge itself for
     /// its "self" entries.
     pub bridge_vlans: BTreeMap<String, BTreeMap<u16, VlanFlags>>,
-    /// IPv4 addresses by device.
+    /// Permanent IPv4 addresses by device: the static ones.
     pub addresses: BTreeMap<String, BTreeSet<Ipv4Prefix>>,
+    /// IPv4 addresses with a limited lifetime by device, with their remaining
+    /// valid lifetime in seconds. Only the DHCP client's script adds these.
+    pub dhcp_addresses: BTreeMap<String, BTreeMap<Ipv4Prefix, u32>>,
 }
 
 impl ActualState {

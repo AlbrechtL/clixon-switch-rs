@@ -1,6 +1,7 @@
 #!/bin/sh
-# Runs clixon with the plugin in a container, against dummy links lan1..lan8
-# in the container's own network namespace.
+# Runs clixon with the plugin in a container, against dummy links lan1..lan7
+# and a veth lan8 with a DHCP server behind it, in the container's own network
+# namespace.
 #
 #   dev/container.sh              shell, clixon running (clixon_cli, curl :8080)
 #   dev/container.sh <command>    runs <command> instead, e.g. tests/integration/run.sh

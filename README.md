@@ -7,7 +7,8 @@
 A [clixon](https://www.clicon.org/) backend plugin, written in Rust, that
 applies an OpenConfig switch configuration to the Linux kernel: DSA switch
 ports in one VLAN-aware bridge, as 802.1Q access and trunk ports or in
-port-based VLAN groups, and routed VLAN interfaces with IPv4 addresses.
+port-based VLAN groups, and routed VLAN interfaces with static IPv4
+addresses or a DHCP client.
 
 clixon provides the datastores, the CLI, NETCONF and RESTCONF. This plugin
 validates each commit and reconciles the kernel over netlink. It was written
@@ -21,8 +22,8 @@ but nothing in it is specific to that board.
 |---|---|
 | `openconfig-interfaces` | `interface[name]/config/{type,enabled}` |
 | `openconfig-vlan` | switch ports: `ethernet/switched-vlan/config/{interface-mode,access-vlan,native-vlan,trunk-vlans}`; routed VLANs: `routed-vlan/config/vlan` (id or name) |
-| `openconfig-if-ip` | `routed-vlan/ipv4/addresses/address[ip]/config/prefix-length` |
-| `clixon-switch` | `vlans/vlan[vlan-id]/config/{name,status}` (the `vlan-top` grouping of `openconfig-vlan`); `switch/config/vlan-mode`; `port-based-vlans/group[id]/config/{name,port}` |
+| `openconfig-if-ip` | `routed-vlan/ipv4/addresses/address[ip]/config/prefix-length`; `routed-vlan/ipv4/config/dhcp-client` |
+| `clixon-switch` | `vlans/vlan[vlan-id]/config/{name,status}` (the `vlan-top` grouping of `openconfig-vlan`); `switch/config/vlan-mode`; `port-based-vlans/group[id]/config/{name,port}`; state only: `routed-vlan/ipv4/state/dhcp-lease` |
 
 The switch runs in one of two VLAN modes, `switch/config/vlan-mode`:
 
@@ -91,11 +92,45 @@ entry's state recreates it without its `config`.
 | VLAN N `SUSPENDED` | no `bridge vlan` entries for N on ports or on `br-lan` |
 | switch port not configured | taken out of `br-lan`, down |
 | `l3ipvlan` interface on VLAN or group N | 802.1Q link on `br-lan` with id N, `bridge vlan add dev br-lan vid N self`, its addresses |
+| `ipv4/config/dhcp-client true` | `udhcpc` on that interface, a child of `clixon_backend` |
 
 A port's new PVID entry is added before its other entries change, so the port
 never drops untagged frames while its native VLAN moves. The rtl83xx DSA
 driver offloads all of these entries to the switch chip, including groups,
 which are ordinary VLANs.
+
+### DHCP client
+
+At most one routed VLAN interface may set `ipv4/config/dhcp-client`,
+because the client owns the default route and `resolv.conf`. Static
+addresses on the same interface stay. The factory default does not use DHCP.
+To enable it on `vlan1`:
+
+```sh
+curl -X PATCH -H 'Content-Type: application/yang-data+json' \
+  -d '{"openconfig-if-ip:ipv4":{"config":{"dhcp-client":true}}}' \
+  http://192.168.1.1/restconf/data/openconfig-interfaces:interfaces/interface=vlan1/openconfig-vlan:routed-vlan/openconfig-if-ip:ipv4
+```
+
+The plugin runs busybox `udhcpc` with `scripts/udhcpc-script.sh`, which it
+expects in the directory above `CLICON_BACKEND_DIR`. On each lease the script
+- adds the address with the lease time as its lifetime (`valid_lft`), so
+  the kernel marks it dynamic. That is how the planner tells it from static
+  addresses, which it would otherwise remove on the next commit. If the
+  client dies, the address expires.
+- replaces the default route with the first router.
+- writes the DNS servers and domain to `resolv.conf` (`RESOLV_CONF` in the
+  backend's environment, default `/etc/resolv.conf`; a symlink is followed).
+- records the lease in `lease.<interface>` in `CLICON_XMLDB_DIR`.
+
+udhcpc sends the host name and releases the lease when the client is
+stopped. A backend that starts stops any udhcpc a previous one left behind
+(pid files in `CLICON_XMLDB_DIR`).
+
+State data shows each address with its `origin` (`STATIC` or `DHCP`),
+`ipv4/state/dhcp-client`, and, since OpenConfig does not model the lease,
+the `clixon-switch:dhcp-lease` container: address, routers, DNS servers,
+domain, server, lease time and remaining time.
 
 Switch ports are the DSA user ports. `CLIXON_SWITCH_PORTS="lan1 lan2"` in the
 environment of `clixon_backend` names other links instead, e.g. dummy links
@@ -127,7 +162,7 @@ default.
 | `crates/clixon-plugin` | safe plugin interface: callbacks, panics caught, logging, transactions |
 | `crates/clixon-switch-plugin` | the cdylib clixon loads |
 | `clixon/` | `clixon.xml` template, `autocli.xml`, CLI spec |
-| `scripts/` | factory default generator, `prepare-datastore`, YANG vendoring |
+| `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, YANG vendoring |
 | `dev/` | development container with clixon at the Yocto recipes' revisions |
 | `tests/integration/` | RESTCONF tests against clixon in the container |
 
@@ -141,7 +176,8 @@ default.
    ```
 
 2. **Integration tests, in a container.** The container runs clixon with the
-   plugin on dummy links `lan1`..`lan8` in its own network namespace. The tests
+   plugin on dummy links `lan1`..`lan7` and a veth `lan8` with a busybox
+   DHCP server at its other end, in its own network namespace. The tests
    drive RESTCONF and check the kernel with `ip` and `bridge`.
 
    ```sh

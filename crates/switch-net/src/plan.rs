@@ -22,11 +22,14 @@ const TAGGED: VlanFlags = VlanFlags {
 /// of them is an error.
 ///
 /// New addresses are added before stale ones are removed, so that moving the
-/// management address does not pass through a state without one.
+/// management address does not pass through a state without one. Addresses
+/// with a lifetime belong to the DHCP client: they stay on the SVI that runs
+/// it and are removed everywhere else.
 pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
     let br = BRIDGE_NAME;
     let empty_vlans = BTreeMap::new();
     let empty_addrs = BTreeSet::new();
+    let empty_dhcp = BTreeMap::new();
     let mut ops = Vec::new();
 
     for name in desired.svis.keys() {
@@ -154,11 +157,22 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
                 id: svi.vlan,
             });
         }
-        let have = match existing {
-            true => actual.addresses.get(name).unwrap_or(&empty_addrs),
-            false => &empty_addrs,
+        let (have, dhcp) = match existing {
+            true => (
+                actual.addresses.get(name).unwrap_or(&empty_addrs),
+                actual.dhcp_addresses.get(name).unwrap_or(&empty_dhcp),
+            ),
+            false => (&empty_addrs, &empty_dhcp),
         };
         for prefix in svi.addresses.difference(have) {
+            // A static address the DHCP client added first: the kernel only
+            // makes it permanent when it is added again.
+            if dhcp.contains_key(prefix) {
+                ops.push(Op::DelAddress {
+                    dev: name.clone(),
+                    prefix: *prefix,
+                });
+            }
             ops.push(Op::AddAddress {
                 dev: name.clone(),
                 prefix: *prefix,
@@ -169,6 +183,14 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
                 dev: name.clone(),
                 prefix: *prefix,
             });
+        }
+        if !svi.dhcp_client {
+            for prefix in dhcp.keys().filter(|p| !svi.addresses.contains(p)) {
+                ops.push(Op::DelAddress {
+                    dev: name.clone(),
+                    prefix: *prefix,
+                });
+            }
         }
         let up = existing && actual.links[name].up;
         if up != svi.enabled {
@@ -181,19 +203,27 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
 
     // Addresses on the bridge or on ports, e.g. left over from the static
     // network script. Last, once the SVIs carry theirs.
-    for (dev, addrs) in &actual.addresses {
+    let leftovers = actual
+        .addresses
+        .iter()
+        .flat_map(|(dev, addrs)| addrs.iter().map(move |p| (dev, p)))
+        .chain(
+            actual
+                .dhcp_addresses
+                .iter()
+                .flat_map(|(dev, addrs)| addrs.keys().map(move |p| (dev, p))),
+        );
+    for (dev, prefix) in leftovers {
         let owned = match actual.links.get(dev).map(|l| &l.kind) {
             Some(LinkKind::Dsa { .. }) => true,
             Some(LinkKind::Bridge { .. }) => dev == br && !fresh_bridge,
             _ => false,
         };
         if owned {
-            for prefix in addrs {
-                ops.push(Op::DelAddress {
-                    dev: dev.clone(),
-                    prefix: *prefix,
-                });
-            }
+            ops.push(Op::DelAddress {
+                dev: dev.clone(),
+                prefix: *prefix,
+            });
         }
     }
 

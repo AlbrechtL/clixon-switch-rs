@@ -34,6 +34,7 @@ fn factory_default() -> DesiredState {
                 enabled: true,
                 vlan: 1,
                 addresses: BTreeSet::from([prefix(192, 168, 1, 1, 24)]),
+                dhcp_client: false,
             },
         )]),
     }
@@ -411,5 +412,102 @@ fn switch_to_port_based_groups() {
     assert_eq!(
         s.addresses["vlan1"],
         BTreeSet::from([prefix(192, 168, 1, 1, 24)])
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DHCP addresses
+// ---------------------------------------------------------------------------
+
+/// The factory default with the DHCP client on vlan1, applied, and a lease
+/// address added the way the udhcpc script adds it.
+fn with_dhcp_lease() -> (FakeNet, DesiredState) {
+    let mut net = FakeNet::gs1900_8();
+    let mut desired = factory_default();
+    desired.svis.get_mut("vlan1").unwrap().dhcp_client = true;
+    run(&mut net, &desired);
+    net.state
+        .dhcp_addresses
+        .entry("vlan1".into())
+        .or_default()
+        .insert(prefix(10, 99, 0, 100, 24), 3600);
+    (net, desired)
+}
+
+#[test]
+fn dhcp_address_stays_while_the_client_runs() {
+    let (mut net, desired) = with_dhcp_lease();
+    assert_eq!(run(&mut net, &desired), vec![]);
+    assert!(net.state.dhcp_addresses["vlan1"].contains_key(&prefix(10, 99, 0, 100, 24)));
+    assert_eq!(
+        net.state.addresses["vlan1"],
+        BTreeSet::from([prefix(192, 168, 1, 1, 24)])
+    );
+}
+
+#[test]
+fn dhcp_address_goes_with_the_client() {
+    let (mut net, mut desired) = with_dhcp_lease();
+    desired.svis.get_mut("vlan1").unwrap().dhcp_client = false;
+    let ops = run(&mut net, &desired);
+    assert_eq!(
+        ops,
+        vec![Op::DelAddress {
+            dev: "vlan1".into(),
+            prefix: prefix(10, 99, 0, 100, 24)
+        }]
+    );
+    assert!(net.state.dhcp_addresses["vlan1"].is_empty());
+    assert_eq!(
+        net.state.addresses["vlan1"],
+        BTreeSet::from([prefix(192, 168, 1, 1, 24)])
+    );
+}
+
+#[test]
+fn static_address_replaces_the_same_dhcp_address() {
+    let (mut net, mut desired) = with_dhcp_lease();
+    desired
+        .svis
+        .get_mut("vlan1")
+        .unwrap()
+        .addresses
+        .insert(prefix(10, 99, 0, 100, 24));
+    let ops = run(&mut net, &desired);
+    let dhcp = prefix(10, 99, 0, 100, 24);
+    assert!(
+        position(
+            &ops,
+            &Op::DelAddress {
+                dev: "vlan1".into(),
+                prefix: dhcp
+            }
+        ) < position(
+            &ops,
+            &Op::AddAddress {
+                dev: "vlan1".into(),
+                prefix: dhcp
+            }
+        )
+    );
+    assert!(net.state.addresses["vlan1"].contains(&dhcp));
+    assert!(net.state.dhcp_addresses["vlan1"].is_empty());
+}
+
+#[test]
+fn dhcp_address_on_a_port_is_removed() {
+    let (mut net, desired) = with_dhcp_lease();
+    net.state
+        .dhcp_addresses
+        .entry("lan1".into())
+        .or_default()
+        .insert(prefix(10, 99, 0, 101, 24), 60);
+    let ops = run(&mut net, &desired);
+    assert_eq!(
+        ops,
+        vec![Op::DelAddress {
+            dev: "lan1".into(),
+            prefix: prefix(10, 99, 0, 101, 24)
+        }]
     );
 }

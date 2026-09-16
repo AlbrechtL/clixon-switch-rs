@@ -10,13 +10,14 @@ module clixon-switch {
   import openconfig-vlan { prefix oc-vlan; }
   import openconfig-vlan-types { prefix oc-vlan-types; }
   import openconfig-if-ip { prefix oc-ip; }
+  import openconfig-inet-types { prefix oc-inet; }
 
   organization "clixon-switch-rs";
   contact "https://github.com/AlbrechtL/clixon-switch-rs";
   description
     "Top-level module of the clixon-switch backend: switch ports in one
-     VLAN-aware bridge, and routed VLAN interfaces with IPv4 addresses, as
-     modelled by OpenConfig.
+     VLAN-aware bridge, and routed VLAN interfaces with static IPv4
+     addresses or a DHCP client, as modelled by OpenConfig.
 
      The switch runs in one of two VLAN modes (switch/config/vlan-mode):
      DOT1Q, with the VLANs declared in vlans and access or trunk ports; or
@@ -30,7 +31,8 @@ module clixon-switch {
 
   revision 2026-09-16 {
     description
-      "VLAN database, trunk ports, VLAN mode and port-based VLAN groups.";
+      "VLAN database, trunk ports, VLAN mode and port-based VLAN groups.
+       State of the DHCP client's lease.";
   }
   revision 2026-09-15 {
     description "Initial revision.";
@@ -106,6 +108,59 @@ module clixon-switch {
       container state {
         config false;
         uses port-based-vlan-group-config;
+      }
+    }
+  }
+
+  // OpenConfig models only whether a DHCP client runs
+  // (ipv4/config/dhcp-client) and the origin of an address, not the lease.
+  augment "/oc-if:interfaces/oc-if:interface/oc-vlan:routed-vlan/"
+        + "oc-ip:ipv4/oc-ip:state" {
+    description
+      "DHCP client lease of a routed VLAN interface.";
+    container dhcp-lease {
+      description
+        "The lease the DHCP client currently holds. Absent while
+         ipv4/config/dhcp-client is false or no lease is bound.";
+      leaf address {
+        type oc-inet:ipv4-address;
+        description "Leased address.";
+      }
+      leaf prefix-length {
+        type uint8 {
+          range "0..32";
+        }
+        description "Prefix length of the leased address.";
+      }
+      leaf-list router {
+        type oc-inet:ipv4-address;
+        ordered-by user;
+        description
+          "Routers offered by the server. The first one is the default
+           gateway.";
+      }
+      leaf-list dns-server {
+        type oc-inet:ipv4-address;
+        ordered-by user;
+        description "DNS servers offered by the server.";
+      }
+      leaf domain {
+        type string;
+        description "DNS domain offered by the server.";
+      }
+      leaf server {
+        type oc-inet:ipv4-address;
+        description "The DHCP server that granted the lease.";
+      }
+      leaf lease-time {
+        type uint32;
+        units seconds;
+        description "Lease duration granted by the server.";
+      }
+      leaf remaining-time {
+        type uint32;
+        units seconds;
+        description "Time until the leased address expires.";
       }
     }
   }
