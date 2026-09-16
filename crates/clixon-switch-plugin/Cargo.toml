@@ -1,0 +1,17 @@
+[package]
+name = "clixon-switch-plugin"
+description = "clixon backend plugin that applies the OpenConfig switch configuration to the Linux kernel"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+# libclixon_switch_plugin.so, loaded by clixon_backend from CLICON_BACKEND_DIR.
+crate-type = ["cdylib"]
+
+[dependencies]
+clixon-plugin = { path = "../clixon-plugin" }
+switch-model = { path = "../switch-model" }
+switch-net = { path = "../switch-net" }

@@ -1,0 +1,76 @@
+{
+  "openconfig-interfaces:interfaces": {
+    "interface": [
+      {
+        "name": "lan1",
+        "config": {"name": "lan1", "type": "iana-if-type:ethernetCsmacd", "enabled": true},
+        "openconfig-if-ethernet:ethernet": {
+          "openconfig-vlan:switched-vlan": {"config": {"interface-mode": "ACCESS", "access-vlan": 1}}
+        }
+      },
+      {
+        "name": "lan2",
+        "config": {"name": "lan2", "type": "iana-if-type:ethernetCsmacd", "enabled": true},
+        "openconfig-if-ethernet:ethernet": {
+          "openconfig-vlan:switched-vlan": {"config": {"interface-mode": "ACCESS", "access-vlan": 1}}
+        }
+      },
+      {
+        "name": "lan3",
+        "config": {"name": "lan3", "type": "iana-if-type:ethernetCsmacd", "enabled": true},
+        "openconfig-if-ethernet:ethernet": {
+          "openconfig-vlan:switched-vlan": {"config": {"interface-mode": "ACCESS", "access-vlan": 1}}
+        }
+      },
+      {
+        "name": "lan4",
+        "config": {"name": "lan4", "type": "iana-if-type:ethernetCsmacd", "enabled": true},
+        "openconfig-if-ethernet:ethernet": {
+          "openconfig-vlan:switched-vlan": {"config": {"interface-mode": "ACCESS", "access-vlan": 1}}
+        }
+      },
+      {
+        "name": "lan5",
+        "config": {"name": "lan5", "type": "iana-if-type:ethernetCsmacd", "enabled": true},
+        "openconfig-if-ethernet:ethernet": {
+          "openconfig-vlan:switched-vlan": {"config": {"interface-mode": "ACCESS", "access-vlan": 1}}
+        }
+      },
+      {
+        "name": "lan6",
+        "config": {"name": "lan6", "type": "iana-if-type:ethernetCsmacd", "enabled": true},
+        "openconfig-if-ethernet:ethernet": {
+          "openconfig-vlan:switched-vlan": {"config": {"interface-mode": "ACCESS", "access-vlan": 1}}
+        }
+      },
+      {
+        "name": "lan7",
+        "config": {"name": "lan7", "type": "iana-if-type:ethernetCsmacd", "enabled": true},
+        "openconfig-if-ethernet:ethernet": {
+          "openconfig-vlan:switched-vlan": {"config": {"interface-mode": "ACCESS", "access-vlan": 1}}
+        }
+      },
+      {
+        "name": "lan8",
+        "config": {"name": "lan8", "type": "iana-if-type:ethernetCsmacd", "enabled": true},
+        "openconfig-if-ethernet:ethernet": {
+          "openconfig-vlan:switched-vlan": {"config": {"interface-mode": "ACCESS", "access-vlan": 1}}
+        }
+      },
+      {
+        "name": "vlan1",
+        "config": {"name": "vlan1", "type": "iana-if-type:l3ipvlan", "enabled": true},
+        "openconfig-vlan:routed-vlan": {
+          "config": {"vlan": 1},
+          "openconfig-if-ip:ipv4": {
+            "addresses": {
+              "address": [
+                {"ip": "192.168.1.1", "config": {"ip": "192.168.1.1", "prefix-length": 24}}
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,1121 @@
+{
+  "openconfig-interfaces:interfaces": {
+    "interface": [
+      {
+        "name": "lan1",
+        "config": {
+          "name": "lan1",
+          "type": "iana-if-type:ethernetCsmacd",
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UNKNOWN",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "160",
+            "out-pkts": "2"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-if-ethernet:ethernet": {
+          "config": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false
+          },
+          "state": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false,
+            "hw-mac-address": "e6:89:85:4d:61:5a"
+          },
+          "openconfig-vlan:switched-vlan": {
+            "config": {
+              "interface-mode": "ACCESS",
+              "access-vlan": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "lan2",
+        "config": {
+          "name": "lan2",
+          "type": "iana-if-type:ethernetCsmacd",
+          "loopback-mode": "NONE",
+          "enabled": false,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UNKNOWN",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "160",
+            "out-pkts": "2"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-if-ethernet:ethernet": {
+          "config": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false
+          },
+          "state": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false,
+            "hw-mac-address": "be:ff:11:a8:86:3e"
+          },
+          "openconfig-vlan:switched-vlan": {
+            "config": {
+              "interface-mode": "ACCESS",
+              "access-vlan": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "lan3",
+        "config": {
+          "name": "lan3",
+          "type": "iana-if-type:ethernetCsmacd",
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UNKNOWN",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "160",
+            "out-pkts": "2"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-if-ethernet:ethernet": {
+          "config": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false
+          },
+          "state": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false,
+            "hw-mac-address": "26:ba:b4:c9:b0:07"
+          },
+          "openconfig-vlan:switched-vlan": {
+            "config": {
+              "interface-mode": "ACCESS",
+              "access-vlan": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "lan4",
+        "config": {
+          "name": "lan4",
+          "type": "iana-if-type:ethernetCsmacd",
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UNKNOWN",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "160",
+            "out-pkts": "2"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-if-ethernet:ethernet": {
+          "config": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false
+          },
+          "state": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false,
+            "hw-mac-address": "32:8e:bc:60:b7:54"
+          },
+          "openconfig-vlan:switched-vlan": {
+            "config": {
+              "interface-mode": "ACCESS",
+              "access-vlan": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "lan5",
+        "config": {
+          "name": "lan5",
+          "type": "iana-if-type:ethernetCsmacd",
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UNKNOWN",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "160",
+            "out-pkts": "2"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-if-ethernet:ethernet": {
+          "config": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false
+          },
+          "state": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false,
+            "hw-mac-address": "52:d5:ef:95:47:b9"
+          },
+          "openconfig-vlan:switched-vlan": {
+            "config": {
+              "interface-mode": "ACCESS",
+              "access-vlan": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "lan6",
+        "config": {
+          "name": "lan6",
+          "type": "iana-if-type:ethernetCsmacd",
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UNKNOWN",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "160",
+            "out-pkts": "2"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-if-ethernet:ethernet": {
+          "config": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false
+          },
+          "state": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false,
+            "hw-mac-address": "d2:e2:55:a6:52:39"
+          },
+          "openconfig-vlan:switched-vlan": {
+            "config": {
+              "interface-mode": "ACCESS",
+              "access-vlan": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "lan7",
+        "config": {
+          "name": "lan7",
+          "type": "iana-if-type:ethernetCsmacd",
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UNKNOWN",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "160",
+            "out-pkts": "2"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-if-ethernet:ethernet": {
+          "config": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false
+          },
+          "state": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false,
+            "hw-mac-address": "0a:24:0d:4c:cd:37"
+          },
+          "openconfig-vlan:switched-vlan": {
+            "config": {
+              "interface-mode": "ACCESS",
+              "access-vlan": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "lan8",
+        "config": {
+          "name": "lan8",
+          "type": "iana-if-type:ethernetCsmacd",
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UNKNOWN",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "160",
+            "out-pkts": "2"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-if-ethernet:ethernet": {
+          "config": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false
+          },
+          "state": {
+            "enable-flow-control": false,
+            "auto-negotiate": true,
+            "standalone-link-training": false,
+            "hw-mac-address": "1a:bb:d6:41:2c:54"
+          },
+          "openconfig-vlan:switched-vlan": {
+            "config": {
+              "interface-mode": "ACCESS",
+              "access-vlan": 1
+            }
+          }
+        }
+      },
+      {
+        "name": "vlan1",
+        "config": {
+          "name": "vlan1",
+          "type": "iana-if-type:l3ipvlan",
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "state": {
+          "loopback-mode": "NONE",
+          "enabled": true,
+          "admin-status": "UP",
+          "oper-status": "UP",
+          "counters": {
+            "in-octets": "0",
+            "in-pkts": "0",
+            "out-octets": "90",
+            "out-pkts": "1"
+          },
+          "openconfig-vlan:tpid": "TPID_0X8100"
+        },
+        "hold-time": {
+          "config": {
+            "up": 0,
+            "down": 0
+          }
+        },
+        "penalty-based-aied": {
+          "config": {
+            "max-suppress-time": 0,
+            "decay-half-life": 0,
+            "suppress-threshold": 0,
+            "reuse-threshold": 0,
+            "flap-penalty": 0
+          }
+        },
+        "openconfig-vlan:routed-vlan": {
+          "config": {
+            "vlan": "1"
+          },
+          "openconfig-if-ip:ipv4": {
+            "addresses": {
+              "address": [
+                {
+                  "ip": "192.168.1.1",
+                  "config": {
+                    "ip": "192.168.1.1",
+                    "prefix-length": 24,
+                    "type": "PRIMARY"
+                  }
+                }
+              ]
+            },
+            "proxy-arp": {
+              "config": {
+                "mode": "DISABLE"
+              }
+            },
+            "unnumbered": {
+              "config": {
+                "enabled": false
+              }
+            },
+            "config": {
+              "enabled": true,
+              "dhcp-client": false
+            },
+            "urpf": {
+              "config": {
+                "enabled": false
+              }
+            }
+          },
+          "openconfig-if-ip:ipv6": {
+            "router-advertisement": {
+              "config": {
+                "enable": true,
+                "suppress": false,
+                "mode": "ALL",
+                "managed": false,
+                "other-config": false
+              }
+            },
+            "unnumbered": {
+              "config": {
+                "enabled": false
+              }
+            },
+            "config": {
+              "enabled": true,
+              "dup-addr-detect-transmits": 1,
+              "learn-unsolicited": "NONE",
+              "dhcp-client": false
+            },
+            "urpf": {
+              "config": {
+                "enabled": false
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "ietf-netconf-monitoring:netconf-state": {
+    "capabilities": {
+      "capability": [
+        "urn:ietf:params:netconf:base:1.0",
+        "urn:ietf:params:netconf:base:1.1",
+        "urn:ietf:params:netconf:capability:candidate:1.0",
+        "urn:ietf:params:netconf:capability:notification:1.0",
+        "urn:ietf:params:netconf:capability:startup:1.0",
+        "urn:ietf:params:netconf:capability:validate:1.1",
+        "urn:ietf:params:netconf:capability:with-defaults:1.0?basic-mode=explicit&also-supported=report-all,trim,report-all-tagged",
+        "urn:ietf:params:netconf:capability:xpath:1.0",
+        "urn:ietf:params:netconf:capability:yang-library:1.1?revision=2019-01-04&module-set-id=0",
+        "urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"
+      ]
+    },
+    "datastores": {
+      "datastore": [
+        {
+          "name": "candidate"
+        },
+        {
+          "name": "running"
+        },
+        {
+          "name": "startup"
+        }
+      ]
+    },
+    "schemas": {
+      "schema": [
+        {
+          "identifier": "clixon-lib",
+          "version": "2026-03-01",
+          "format": "yang",
+          "namespace": "http://clicon.org/lib",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "clixon-switch",
+          "version": "2026-09-15",
+          "format": "yang",
+          "namespace": "urn:github:albrechtl:clixon-switch",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "iana-if-type",
+          "version": "2017-01-19",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:iana-if-type",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-datastores",
+          "version": "2018-02-14",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-datastores",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-inet-types",
+          "version": "2021-02-22",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-inet-types",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-interfaces",
+          "version": "2018-02-20",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-interfaces",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-list-pagination",
+          "version": "2025-04-03",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-list-pagination",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-list-pagination-nc",
+          "version": "2025-04-03",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-list-pagination-nc",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-netconf",
+          "version": "2011-06-01",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:netconf:base:1.0",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-netconf-acm",
+          "version": "2018-02-14",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-acm",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-netconf-monitoring",
+          "version": "2010-10-04",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-netconf-nmda",
+          "version": "2019-01-07",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-nmda",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-netconf-private-candidate",
+          "version": "2025-10-30",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-private-candidate",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-netconf-with-defaults",
+          "version": "2011-06-01",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-with-defaults",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-nmda-compare",
+          "version": "2024-04-16",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-nmda-compare",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-origin",
+          "version": "2018-02-14",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-origin",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-restconf",
+          "version": "2017-01-26",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-restconf",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-system-capabilities",
+          "version": "2021-04-02",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-system-capabilities",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-yang-library",
+          "version": "2019-01-04",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-yang-library",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-yang-metadata",
+          "version": "2016-08-05",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-yang-metadata",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-yang-patch",
+          "version": "2017-02-22",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-yang-patch",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "ietf-yang-types",
+          "version": "2013-07-15",
+          "format": "yang",
+          "namespace": "urn:ietf:params:xml:ns:yang:ietf-yang-types",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-extensions",
+          "version": "2024-09-19",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/openconfig-ext",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-if-aggregate",
+          "version": "2025-04-22",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/interfaces/aggregate",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-if-ethernet",
+          "version": "2024-09-17",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/interfaces/ethernet",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-if-ip",
+          "version": "2025-05-12",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/interfaces/ip",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-inet-types",
+          "version": "2024-01-05",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/types/inet",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-interfaces",
+          "version": "2024-12-05",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/interfaces",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-platform-types",
+          "version": "2024-11-04",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/platform-types",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-transport-types",
+          "version": "2024-11-21",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/transport-types",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-types",
+          "version": "2024-01-31",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/openconfig-types",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-vlan",
+          "version": "2023-02-07",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/vlan",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-vlan-types",
+          "version": "2022-05-24",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/vlan-types",
+          "location": [
+            "NETCONF"
+          ]
+        },
+        {
+          "identifier": "openconfig-yang-types",
+          "version": "2024-05-30",
+          "format": "yang",
+          "namespace": "http://openconfig.net/yang/types/yang",
+          "location": [
+            "NETCONF"
+          ]
+        }
+      ]
+    },
+    "sessions": {
+      "session": [
+        {
+          "session-id": 1,
+          "transport": "clixon-lib:netconf",
+          "username": "clicon",
+          "login-time": "2026-09-15T19:28:47.427179Z",
+          "in-rpcs": 2,
+          "in-bad-rpcs": 0,
+          "out-rpc-errors": 0,
+          "out-notifications": 0
+        }
+      ]
+    },
+    "statistics": {
+      "netconf-start-time": "2026-09-15T19:28:47.404223Z",
+      "in-bad-hellos": 0,
+      "in-sessions": 1,
+      "dropped-sessions": 0,
+      "in-rpcs": 2,
+      "in-bad-rpcs": 0,
+      "out-rpc-errors": 0,
+      "out-notifications": 0
+    }
+  },
+  "ietf-yang-library:yang-library": {
+    "module-set": [
+      {
+        "name": "top",
+        "module": [
+          {
+            "name": "clixon-lib",
+            "revision": "2026-03-01",
+            "namespace": "http://clicon.org/lib"
+          },
+          {
+            "name": "clixon-switch",
+            "revision": "2026-09-15",
+            "namespace": "urn:github:albrechtl:clixon-switch"
+          },
+          {
+            "name": "iana-if-type",
+            "revision": "2017-01-19",
+            "namespace": "urn:ietf:params:xml:ns:yang:iana-if-type"
+          },
+          {
+            "name": "ietf-datastores",
+            "revision": "2018-02-14",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-datastores"
+          },
+          {
+            "name": "ietf-inet-types",
+            "revision": "2021-02-22",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-inet-types"
+          },
+          {
+            "name": "ietf-interfaces",
+            "revision": "2018-02-20",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-interfaces"
+          },
+          {
+            "name": "ietf-list-pagination",
+            "revision": "2025-04-03",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-list-pagination"
+          },
+          {
+            "name": "ietf-list-pagination-nc",
+            "revision": "2025-04-03",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-list-pagination-nc"
+          },
+          {
+            "name": "ietf-netconf",
+            "revision": "2011-06-01",
+            "namespace": "urn:ietf:params:xml:ns:netconf:base:1.0",
+            "feature": [
+              "candidate",
+              "startup",
+              "validate",
+              "xpath"
+            ]
+          },
+          {
+            "name": "ietf-netconf-acm",
+            "revision": "2018-02-14",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-acm"
+          },
+          {
+            "name": "ietf-netconf-monitoring",
+            "revision": "2010-10-04",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-monitoring"
+          },
+          {
+            "name": "ietf-netconf-nmda",
+            "revision": "2019-01-07",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-nmda"
+          },
+          {
+            "name": "ietf-netconf-private-candidate",
+            "revision": "2025-10-30",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-private-candidate"
+          },
+          {
+            "name": "ietf-netconf-with-defaults",
+            "revision": "2011-06-01",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-netconf-with-defaults"
+          },
+          {
+            "name": "ietf-nmda-compare",
+            "revision": "2024-04-16",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-nmda-compare"
+          },
+          {
+            "name": "ietf-origin",
+            "revision": "2018-02-14",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-origin"
+          },
+          {
+            "name": "ietf-restconf",
+            "revision": "2017-01-26",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-restconf"
+          },
+          {
+            "name": "ietf-system-capabilities",
+            "revision": "2021-04-02",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-system-capabilities"
+          },
+          {
+            "name": "ietf-yang-library",
+            "revision": "2019-01-04",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-yang-library"
+          },
+          {
+            "name": "ietf-yang-metadata",
+            "revision": "2016-08-05",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-yang-metadata"
+          },
+          {
+            "name": "ietf-yang-patch",
+            "revision": "2017-02-22",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-yang-patch"
+          },
+          {
+            "name": "ietf-yang-types",
+            "revision": "2013-07-15",
+            "namespace": "urn:ietf:params:xml:ns:yang:ietf-yang-types"
+          },
+          {
+            "name": "openconfig-extensions",
+            "revision": "2024-09-19",
+            "namespace": "http://openconfig.net/yang/openconfig-ext"
+          },
+          {
+            "name": "openconfig-if-aggregate",
+            "revision": "2025-04-22",
+            "namespace": "http://openconfig.net/yang/interfaces/aggregate"
+          },
+          {
+            "name": "openconfig-if-ethernet",
+            "revision": "2024-09-17",
+            "namespace": "http://openconfig.net/yang/interfaces/ethernet"
+          },
+          {
+            "name": "openconfig-if-ip",
+            "revision": "2025-05-12",
+            "namespace": "http://openconfig.net/yang/interfaces/ip"
+          },
+          {
+            "name": "openconfig-inet-types",
+            "revision": "2024-01-05",
+            "namespace": "http://openconfig.net/yang/types/inet"
+          },
+          {
+            "name": "openconfig-interfaces",
+            "revision": "2024-12-05",
+            "namespace": "http://openconfig.net/yang/interfaces"
+          },
+          {
+            "name": "openconfig-platform-types",
+            "revision": "2024-11-04",
+            "namespace": "http://openconfig.net/yang/platform-types"
+          },
+          {
+            "name": "openconfig-transport-types",
+            "revision": "2024-11-21",
+            "namespace": "http://openconfig.net/yang/transport-types"
+          },
+          {
+            "name": "openconfig-types",
+            "revision": "2024-01-31",
+            "namespace": "http://openconfig.net/yang/openconfig-types"
+          },
+          {
+            "name": "openconfig-vlan",
+            "revision": "2023-02-07",
+            "namespace": "http://openconfig.net/yang/vlan"
+          },
+          {
+            "name": "openconfig-vlan-types",
+            "revision": "2022-05-24",
+            "namespace": "http://openconfig.net/yang/vlan-types"
+          },
+          {
+            "name": "openconfig-yang-types",
+            "revision": "2024-05-30",
+            "namespace": "http://openconfig.net/yang/types/yang"
+          }
+        ]
+      }
+    ],
+    "content-id": "0"
+  },
+  "ietf-netconf-acm:nacm": {
+    "enable-nacm": true,
+    "read-default": "permit",
+    "write-default": "deny",
+    "exec-default": "permit",
+    "enable-external-groups": true
+  }
+}

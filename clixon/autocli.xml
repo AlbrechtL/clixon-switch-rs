@@ -1,0 +1,26 @@
+<clixon-config xmlns="http://clicon.org/config">
+  <autocli>
+    <!-- Generate CLI commands only for the switch's data model. -->
+    <module-default>false</module-default>
+    <rule>
+      <name>interfaces</name>
+      <operation>enable</operation>
+      <module-name>openconfig-interfaces</module-name>
+    </rule>
+    <rule>
+      <name>ethernet</name>
+      <operation>enable</operation>
+      <module-name>openconfig-if-ethernet</module-name>
+    </rule>
+    <rule>
+      <name>vlan</name>
+      <operation>enable</operation>
+      <module-name>openconfig-vlan</module-name>
+    </rule>
+    <rule>
+      <name>ip</name>
+      <operation>enable</operation>
+      <module-name>openconfig-if-ip</module-name>
+    </rule>
+  </autocli>
+</clixon-config>

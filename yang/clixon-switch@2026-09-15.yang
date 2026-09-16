@@ -1,0 +1,29 @@
+module clixon-switch {
+  yang-version 1.1;
+  namespace "urn:github:albrechtl:clixon-switch";
+  prefix sw;
+
+  // The modules imported here make up the switch's data model.
+  // scripts/vendor-yang.sh copies their import closure from openconfig/public.
+  import openconfig-interfaces { prefix oc-if; }
+  import openconfig-if-ethernet { prefix oc-eth; }
+  import openconfig-vlan { prefix oc-vlan; }
+  import openconfig-if-ip { prefix oc-ip; }
+
+  organization "clixon-switch-rs";
+  contact "https://github.com/AlbrechtL/clixon-switch-rs";
+  description
+    "Top-level module of the clixon-switch backend: switch ports in one
+     VLAN-aware bridge, and routed VLAN interfaces with IPv4 addresses, as
+     modelled by OpenConfig.
+
+     The backend implements only part of these modules. It rejects any other
+     configuration when validating a commit (see switch-model's supported.rs).
+     There are no deviation statements: clixon 7.8 does not reject data for
+     nodes marked 'deviate not-supported', it only skips their must
+     checks.";
+
+  revision 2026-09-15 {
+    description "Initial revision.";
+  }
+}

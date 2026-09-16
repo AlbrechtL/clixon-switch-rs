@@ -1,0 +1,5 @@
+# Same compiler as openembedded-core wrynose (rust_1.94.1.bb), so host builds
+# see the same language and lint behaviour as the Yocto cross build.
+[toolchain]
+channel = "1.94.1"
+components = ["rustfmt", "clippy"]

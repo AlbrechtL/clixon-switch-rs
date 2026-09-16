@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+# The clixon crates link libclixon, which exists in the dev container and the
+# Yocto sysroot but usually not on the host. "cargo test" builds just these.
+default-members = ["crates/switch-model", "crates/switch-net"]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/AlbrechtL/clixon-switch-rs"
+rust-version = "1.94"
+
+[profile.release]
+# Flash is the constraint on the GS1900-8 (16 MiB SPI-NOR). panic stays
+# "unwind": every clixon callback is wrapped in catch_unwind, so a panic
+# fails the transaction instead of aborting clixon_backend.
+opt-level = "s"
+lto = true
+codegen-units = 1

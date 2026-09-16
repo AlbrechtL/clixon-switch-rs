@@ -1,0 +1,55 @@
+CLICON_MODE="clixon-switch";
+CLICON_PROMPT="switch> ";
+
+# Commands generated from the data model (see autocli.xml)
+set @datamodel, cli_set();
+merge @datamodel, cli_merge();
+create @datamodel, cli_create();
+delete("Delete a configuration item") @datamodel, cli_del();
+delete("Delete a configuration item") all("Delete the whole candidate configuration"), delete_all("candidate");
+
+validate("Validate the candidate configuration"), cli_validate();
+commit("Apply the candidate configuration (not persistent until save)"), cli_commit();
+discard("Discard uncommitted changes"), discard_changes();
+save("Save the running configuration as startup configuration, kept across reboots"), db_copy("running", "startup");
+quit("Quit"), cli_quit();
+
+no("Negate or remove") debug("Debugging parts of the system"), cli_debug_cli((int32)0);
+debug("Debugging parts of the system"), cli_debug_cli((int32)1);{
+    level("Set debug level: 1..n") <level:int32>("Set debug level (0..n)"), cli_debug_backend();
+}
+
+show("Show a particular state of the system"){
+    version("Show version"), cli_show_version("candidate", "text", "/");
+    compare("Compare candidate and running configuration"), compare_dbs((int32)1);
+    configuration("Show the candidate configuration"), cli_show_config("candidate", "text", "/");{
+        xml("As XML"), cli_show_config("candidate", "xml", "/");{
+            @datamodel, cli_show_auto("candidate", "xml");
+        }
+        cli("As CLI commands"), cli_show_config("candidate", "cli", "/");{
+            @datamodel, cli_show_auto("candidate", "cli");
+        }
+        json("As JSON"), cli_show_config("candidate", "json", "/");{
+            @datamodel, cli_show_auto("candidate", "json");
+        }
+        text("As text"), cli_show_config("candidate", "text", "/");{
+            @datamodel, cli_show_auto("candidate", "text");
+        }
+    }
+    startup("Show the saved startup configuration"), cli_show_config("startup", "text", "/");
+    state("Show the running configuration with operational state"), cli_show_config("running", "text", "/", NULL, true, true);{
+        xml("As XML"), cli_show_config("running", "xml", "/", NULL, true, true);{
+            @datamodel, cli_show_auto("running", "xml", true, true);
+        }
+        json("As JSON"), cli_show_config("running", "json", "/", NULL, true, true);{
+            @datamodel, cli_show_auto("running", "json", true, true);
+        }
+        text("As text"), cli_show_config("running", "text", "/", NULL, true, true);{
+            @datamodel, cli_show_auto("running", "text", true, true);
+        }
+    }
+    memory("Show memory usage") {
+        cli("Show CLI memory usage"), cli_show_statistics("cli");
+        backend("Show backend memory usage"), cli_show_statistics("backend");
+    }
+}

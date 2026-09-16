@@ -1,0 +1,16 @@
+[package]
+name = "switch-net"
+description = "Kernel state of the switch: observe, plan and apply bridge, VLAN and address changes"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+switch-model = { path = "../switch-model" }
+# Synchronous rtnetlink, no async runtime: the plugin runs inside
+# clixon_backend's single-threaded event loop.
+netlink-packet-core = "0.9"
+netlink-packet-route = "0.33"
+netlink-sys = "0.9"
