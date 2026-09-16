@@ -1,6 +1,6 @@
 # Development container: cligen and clixon at the same revisions as the
-# Yocto recipes (meta-rtl83xx-distro, recipes-clixon), plus Rust. Built and
-# run by dev/container.sh.
+# Yocto recipes (meta-ethernet-switch-os, recipes-clixon), plus Rust.
+# Built and run by dev/container.sh.
 FROM rust:1.94.1-bookworm
 
 ARG CLIGEN_REV=e43397cd5c951de85a22620122c02078a05babcd

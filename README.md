@@ -12,8 +12,8 @@ addresses.
 clixon provides the datastores, the CLI, NETCONF and RESTCONF. This plugin
 validates each commit and reconciles the kernel over netlink. It was written
 for the Zyxel GS1900-8 running
-[meta-rtl83xx-distro](https://github.com/AlbrechtL/meta-rtl83xx-distro), but
-nothing in it is specific to that board.
+[meta-ethernet-switch-os](https://github.com/AlbrechtL/meta-ethernet-switch-os),
+but nothing in it is specific to that board.
 
 ## Data model
 
