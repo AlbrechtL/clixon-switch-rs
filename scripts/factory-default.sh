@@ -1,6 +1,7 @@
 #!/bin/sh
-# Prints the factory default configuration as a clixon datastore: the given
-# ports as access ports in VLAN 1, and interface vlan1 with the address.
+# Prints the factory default configuration as a clixon datastore: VLAN 1
+# declared, the given ports as access ports in VLAN 1, and interface vlan1
+# with the address. The VLAN mode is left at its default, DOT1Q.
 #
 #   scripts/factory-default.sh "lan1 lan2 ... lan8" 192.168.1.1/24
 
@@ -13,6 +14,15 @@ prefix_length=${address#*/}
 
 cat <<XML
 <config>
+  <vlans xmlns="urn:github:albrechtl:clixon-switch">
+    <vlan>
+      <vlan-id>1</vlan-id>
+      <config>
+        <vlan-id>1</vlan-id>
+        <name>default</name>
+      </config>
+    </vlan>
+  </vlans>
   <interfaces xmlns="http://openconfig.net/yang/interfaces">
 XML
 for port in $ports; do

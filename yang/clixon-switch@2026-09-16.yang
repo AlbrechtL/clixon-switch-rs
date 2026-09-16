@@ -1,0 +1,112 @@
+module clixon-switch {
+  yang-version 1.1;
+  namespace "urn:github:albrechtl:clixon-switch";
+  prefix sw;
+
+  // The modules imported here make up the switch's data model.
+  // scripts/vendor-yang.sh copies their import closure from openconfig/public.
+  import openconfig-interfaces { prefix oc-if; }
+  import openconfig-if-ethernet { prefix oc-eth; }
+  import openconfig-vlan { prefix oc-vlan; }
+  import openconfig-vlan-types { prefix oc-vlan-types; }
+  import openconfig-if-ip { prefix oc-ip; }
+
+  organization "clixon-switch-rs";
+  contact "https://github.com/AlbrechtL/clixon-switch-rs";
+  description
+    "Top-level module of the clixon-switch backend: switch ports in one
+     VLAN-aware bridge, and routed VLAN interfaces with IPv4 addresses, as
+     modelled by OpenConfig.
+
+     The switch runs in one of two VLAN modes (switch/config/vlan-mode):
+     DOT1Q, with the VLANs declared in vlans and access or trunk ports; or
+     PORT_BASED, with ports in disjoint port-based-vlans groups and no tags.
+
+     The backend implements only part of these modules. It rejects any other
+     configuration when validating a commit (see switch-model's supported.rs).
+     There are no deviation statements: clixon 7.8 does not reject data for
+     nodes marked 'deviate not-supported', it only skips their must
+     checks.";
+
+  revision 2026-09-16 {
+    description
+      "VLAN database, trunk ports, VLAN mode and port-based VLAN groups.";
+  }
+  revision 2026-09-15 {
+    description "Initial revision.";
+  }
+
+  // The VLAN database. openconfig-vlan only defines the grouping; its user,
+  // openconfig-network-instance, is too big for the switch.
+  uses oc-vlan:vlan-top;
+
+  grouping switch-config {
+    leaf vlan-mode {
+      type enumeration {
+        enum DOT1Q {
+          description
+            "IEEE 802.1Q: VLANs declared in /vlans, ports in access or
+             trunk mode.";
+        }
+        enum PORT_BASED {
+          description
+            "Ports in disjoint groups (/port-based-vlans), untagged. Ports
+             forward only to ports of their own group.";
+        }
+      }
+      default DOT1Q;
+      description "How ports are assigned to VLANs.";
+    }
+  }
+
+  container switch {
+    description "Switch-wide settings.";
+    container config {
+      uses switch-config;
+    }
+    container state {
+      config false;
+      uses switch-config;
+    }
+  }
+
+  grouping port-based-vlan-group-config {
+    leaf id {
+      type oc-vlan-types:vlan-id;
+      description
+        "Group id. Also the VLAN id the group uses inside the switch, so a
+         routed-vlan interface refers to the group by it.";
+    }
+    leaf name {
+      type string;
+      description "Group name; routed-vlan interfaces may refer to it.";
+    }
+    leaf-list port {
+      type leafref {
+        path "/oc-if:interfaces/oc-if:interface/oc-if:name";
+      }
+      description
+        "Member ports. A port is a member of at most one group.";
+    }
+  }
+
+  container port-based-vlans {
+    description
+      "Port-based VLAN groups, used in vlan-mode PORT_BASED only.";
+    list group {
+      key "id";
+      leaf id {
+        type leafref {
+          path "../config/id";
+        }
+      }
+      container config {
+        uses port-based-vlan-group-config;
+      }
+      container state {
+        config false;
+        uses port-based-vlan-group-config;
+      }
+    }
+  }
+}

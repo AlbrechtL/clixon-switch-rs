@@ -1,4 +1,73 @@
 {
+  "clixon-switch:vlans": {
+    "vlan": [
+      {
+        "vlan-id": "1",
+        "config": {
+          "vlan-id": 1,
+          "name": "default",
+          "status": "ACTIVE"
+        },
+        "state": {
+          "vlan-id": 1,
+          "name": "default",
+          "status": "ACTIVE"
+        },
+        "members": {
+          "member": [
+            {
+              "state": {
+                "interface": "lan1"
+              }
+            },
+            {
+              "state": {
+                "interface": "lan2"
+              }
+            },
+            {
+              "state": {
+                "interface": "lan3"
+              }
+            },
+            {
+              "state": {
+                "interface": "lan4"
+              }
+            },
+            {
+              "state": {
+                "interface": "lan5"
+              }
+            },
+            {
+              "state": {
+                "interface": "lan6"
+              }
+            },
+            {
+              "state": {
+                "interface": "lan7"
+              }
+            },
+            {
+              "state": {
+                "interface": "lan8"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "clixon-switch:switch": {
+    "config": {
+      "vlan-mode": "DOT1Q"
+    },
+    "state": {
+      "vlan-mode": "DOT1Q"
+    }
+  },
   "openconfig-interfaces:interfaces": {
     "interface": [
       {
@@ -18,8 +87,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "160",
-            "out-pkts": "2"
+            "out-octets": "250",
+            "out-pkts": "3"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -48,7 +117,7 @@
             "enable-flow-control": false,
             "auto-negotiate": true,
             "standalone-link-training": false,
-            "hw-mac-address": "e6:89:85:4d:61:5a"
+            "hw-mac-address": "2e:b0:70:8b:d0:99"
           },
           "openconfig-vlan:switched-vlan": {
             "config": {
@@ -75,8 +144,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "160",
-            "out-pkts": "2"
+            "out-octets": "250",
+            "out-pkts": "3"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -105,7 +174,7 @@
             "enable-flow-control": false,
             "auto-negotiate": true,
             "standalone-link-training": false,
-            "hw-mac-address": "be:ff:11:a8:86:3e"
+            "hw-mac-address": "e6:93:9c:88:a6:a3"
           },
           "openconfig-vlan:switched-vlan": {
             "config": {
@@ -132,8 +201,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "160",
-            "out-pkts": "2"
+            "out-octets": "250",
+            "out-pkts": "3"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -162,7 +231,7 @@
             "enable-flow-control": false,
             "auto-negotiate": true,
             "standalone-link-training": false,
-            "hw-mac-address": "26:ba:b4:c9:b0:07"
+            "hw-mac-address": "ce:8b:5a:e9:26:17"
           },
           "openconfig-vlan:switched-vlan": {
             "config": {
@@ -189,8 +258,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "160",
-            "out-pkts": "2"
+            "out-octets": "250",
+            "out-pkts": "3"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -219,7 +288,7 @@
             "enable-flow-control": false,
             "auto-negotiate": true,
             "standalone-link-training": false,
-            "hw-mac-address": "32:8e:bc:60:b7:54"
+            "hw-mac-address": "0e:ae:e6:59:fe:65"
           },
           "openconfig-vlan:switched-vlan": {
             "config": {
@@ -246,8 +315,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "160",
-            "out-pkts": "2"
+            "out-octets": "250",
+            "out-pkts": "3"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -276,7 +345,7 @@
             "enable-flow-control": false,
             "auto-negotiate": true,
             "standalone-link-training": false,
-            "hw-mac-address": "52:d5:ef:95:47:b9"
+            "hw-mac-address": "52:0e:9f:8a:13:88"
           },
           "openconfig-vlan:switched-vlan": {
             "config": {
@@ -303,8 +372,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "160",
-            "out-pkts": "2"
+            "out-octets": "250",
+            "out-pkts": "3"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -333,7 +402,7 @@
             "enable-flow-control": false,
             "auto-negotiate": true,
             "standalone-link-training": false,
-            "hw-mac-address": "d2:e2:55:a6:52:39"
+            "hw-mac-address": "82:d8:1b:a1:75:5f"
           },
           "openconfig-vlan:switched-vlan": {
             "config": {
@@ -360,8 +429,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "160",
-            "out-pkts": "2"
+            "out-octets": "250",
+            "out-pkts": "3"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -390,7 +459,7 @@
             "enable-flow-control": false,
             "auto-negotiate": true,
             "standalone-link-training": false,
-            "hw-mac-address": "0a:24:0d:4c:cd:37"
+            "hw-mac-address": "12:69:7a:7b:65:de"
           },
           "openconfig-vlan:switched-vlan": {
             "config": {
@@ -417,8 +486,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "160",
-            "out-pkts": "2"
+            "out-octets": "250",
+            "out-pkts": "3"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -447,7 +516,7 @@
             "enable-flow-control": false,
             "auto-negotiate": true,
             "standalone-link-training": false,
-            "hw-mac-address": "1a:bb:d6:41:2c:54"
+            "hw-mac-address": "7e:c4:b9:ef:75:93"
           },
           "openconfig-vlan:switched-vlan": {
             "config": {
@@ -474,8 +543,8 @@
           "counters": {
             "in-octets": "0",
             "in-pkts": "0",
-            "out-octets": "90",
-            "out-pkts": "1"
+            "out-octets": "180",
+            "out-pkts": "2"
           },
           "openconfig-vlan:tpid": "TPID_0X8100"
         },
@@ -603,7 +672,7 @@
         },
         {
           "identifier": "clixon-switch",
-          "version": "2026-09-15",
+          "version": "2026-09-16",
           "format": "yang",
           "namespace": "urn:github:albrechtl:clixon-switch",
           "location": [
@@ -904,9 +973,10 @@
       "session": [
         {
           "session-id": 1,
-          "transport": "clixon-lib:netconf",
+          "transport": "clixon-lib:restconf",
           "username": "clicon",
-          "login-time": "2026-09-15T19:28:47.427179Z",
+          "source-host": "127.0.0.1",
+          "login-time": "2026-09-16T18:02:20.673927Z",
           "in-rpcs": 2,
           "in-bad-rpcs": 0,
           "out-rpc-errors": 0,
@@ -915,7 +985,7 @@
       ]
     },
     "statistics": {
-      "netconf-start-time": "2026-09-15T19:28:47.404223Z",
+      "netconf-start-time": "2026-09-16T18:02:20.512693Z",
       "in-bad-hellos": 0,
       "in-sessions": 1,
       "dropped-sessions": 0,
@@ -937,7 +1007,7 @@
           },
           {
             "name": "clixon-switch",
-            "revision": "2026-09-15",
+            "revision": "2026-09-16",
             "namespace": "urn:github:albrechtl:clixon-switch"
           },
           {

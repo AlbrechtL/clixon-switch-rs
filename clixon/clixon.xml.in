@@ -21,6 +21,11 @@
        symlink set up by prepare-datastore. -->
   <CLICON_XMLDB_DIR>@RUNSTATEDIR@/clixon-switch</CLICON_XMLDB_DIR>
   <CLICON_STARTUP_MODE>startup</CLICON_STARTUP_MODE>
+  <!-- Validate configuration without state data. With state merged in
+       (the default since clixon 7.8), removing the last entry of a list
+       fails: the state of the entry still being applied recreates it
+       without its config. No configuration refers to state data. -->
+  <CLICON_VALIDATE_TARGET_STATE>false</CLICON_VALIDATE_TARGET_STATE>
   <!-- RESTCONF. The daemon is started by its own init script and reads the
        <restconf> block below instead of a datastore. -->
   <CLICON_BACKEND_RESTCONF_PROCESS>false</CLICON_BACKEND_RESTCONF_PROCESS>

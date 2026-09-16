@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use switch_model::Port;
+
 use crate::{ActualState, DesiredState, Error, LinkKind, Op, Result, VlanFlags, BRIDGE_NAME};
 
 const ACCESS: VlanFlags = VlanFlags {
@@ -103,12 +105,7 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
                     true => actual.bridge_vlans.get(name).unwrap_or(&empty_vlans),
                     false => &empty_vlans,
                 };
-                sync_vlans(
-                    &mut ops,
-                    name,
-                    have,
-                    &BTreeMap::from([(port.access_vlan, ACCESS)]),
-                );
+                sync_vlans(&mut ops, name, have, &port_vlans(port));
                 if link.up != port.enabled {
                     ops.push(Op::SetUp {
                         name: name.clone(),
@@ -134,7 +131,7 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
     }
 
     // The bridge's own VLAN entries: one tagged entry per SVI, so the CPU
-    // sees that VLAN.
+    // sees that VLAN. None for suspended VLANs.
     let have = match fresh_bridge {
         true => &empty_vlans,
         false => actual.bridge_vlans.get(br).unwrap_or(&empty_vlans),
@@ -142,6 +139,7 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
     let want = desired
         .svis
         .values()
+        .filter(|svi| desired.vlan_active(svi.vlan))
         .map(|svi| (svi.vlan, TAGGED))
         .collect();
     sync_vlans(&mut ops, br, have, &want);
@@ -202,14 +200,26 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
     Ok(ops)
 }
 
+/// Bridge VLAN entries of a port: its native VLAN untagged and as PVID, the
+/// others tagged.
+fn port_vlans(port: &Port) -> BTreeMap<u16, VlanFlags> {
+    port.tagged_vlans
+        .iter()
+        .map(|vid| (*vid, TAGGED))
+        .chain(port.native_vlan.map(|vid| (vid, ACCESS)))
+        .collect()
+}
+
 fn sync_vlans(
     ops: &mut Vec<Op>,
     dev: &str,
     have: &BTreeMap<u16, VlanFlags>,
     want: &BTreeMap<u16, VlanFlags>,
 ) {
-    // Add first: a port keeps a PVID while its access VLAN changes.
-    for (vid, flags) in want {
+    // Add first, the PVID entry before all others: a port keeps a PVID while
+    // its native VLAN changes, also when the old one stays as a tagged VLAN.
+    let (pvid, others): (Vec<_>, Vec<_>) = want.iter().partition(|(_, flags)| flags.pvid);
+    for (vid, flags) in pvid.into_iter().chain(others) {
         if have.get(vid) != Some(flags) {
             ops.push(Op::AddBridgeVlan {
                 dev: dev.into(),

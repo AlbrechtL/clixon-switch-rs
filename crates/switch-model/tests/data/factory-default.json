@@ -1,4 +1,9 @@
 {
+  "clixon-switch:vlans": {
+    "vlan": [
+      {"vlan-id": 1, "config": {"vlan-id": 1, "name": "default"}}
+    ]
+  },
   "openconfig-interfaces:interfaces": {
     "interface": [
       {

@@ -6,8 +6,10 @@
 //! plugin rejects what it does not implement itself: every configuration
 //! node below is either implemented ([`Rule::Any`]), or accepted only with its
 //! YANG default ([`Rule::Default`]), because clixon fills defaults into the
-//! tree. Operational state, which clixon merges into the tree as well, and
-//! the other top-level modules (NACM, YANG library, ...) are not checked.
+//! tree. Operational state, which clixon merges into the tree unless
+//! CLICON_VALIDATE_TARGET_STATE is off (clixon.xml turns it off), and the
+//! top-level modules other than openconfig-interfaces and clixon-switch
+//! (NACM, YANG library, ...) are not checked.
 //!
 //! Implementing more of the model means moving leaves from `Default` to
 //! `Any` and adding containers here.
@@ -94,7 +96,12 @@ const ETHERNET: &[(&str, Rule)] = &[
         Node(&[
             (
                 "config",
-                Node(&[("interface-mode", Any), ("access-vlan", Any)]),
+                Node(&[
+                    ("interface-mode", Any),
+                    ("access-vlan", Any),
+                    ("native-vlan", Any),
+                    ("trunk-vlans", Any),
+                ]),
             ),
             STATE,
         ]),
@@ -186,6 +193,40 @@ const IPV6: &[(&str, Rule)] = &[
     ),
 ];
 
+/// The clixon-switch module's top-level containers, all implemented.
+const SWITCH: &[(&str, Rule)] = &[
+    (
+        "clixon-switch:vlans",
+        Node(&[(
+            "vlan",
+            List(&[
+                ("vlan-id", Any),
+                (
+                    "config",
+                    Node(&[("vlan-id", Any), ("name", Any), ("status", Any)]),
+                ),
+                STATE,
+                ("members", Ignore),
+            ]),
+        )]),
+    ),
+    (
+        "clixon-switch:switch",
+        Node(&[("config", Node(&[("vlan-mode", Any)])), STATE]),
+    ),
+    (
+        "clixon-switch:port-based-vlans",
+        Node(&[(
+            "group",
+            List(&[
+                ("id", Any),
+                ("config", Node(&[("id", Any), ("name", Any), ("port", Any)])),
+                STATE,
+            ]),
+        )]),
+    ),
+];
+
 /// One error per configured node in `config` (the RFC 7951 JSON of a
 /// datastore tree) that the switch does not implement.
 pub(crate) fn check(config: &Value) -> Vec<Error> {
@@ -203,6 +244,22 @@ pub(crate) fn check(config: &Value) -> Vec<Error> {
             interface: name.to_string(),
             message,
         }));
+    }
+
+    for (key, rule) in SWITCH {
+        if let Some(value) = config.get(key) {
+            let mut messages = Vec::new();
+            check_value(
+                value,
+                rule,
+                key.rsplit(':').next().unwrap_or(key),
+                &mut messages,
+            );
+            errors.extend(messages.into_iter().map(|message| Error {
+                interface: String::new(),
+                message,
+            }));
+        }
     }
     errors
 }

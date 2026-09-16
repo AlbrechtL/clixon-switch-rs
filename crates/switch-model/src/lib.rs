@@ -6,7 +6,8 @@
 //! modelled; serde skips everything else. clixon has already validated the
 //! tree against YANG (types, ranges, mandatory leaves, deviations), so the
 //! checks here are the ones YANG cannot express: that a port exists on this
-//! switch, one routed VLAN interface per VLAN, and so on.
+//! switch, that a VLAN is declared, one routed VLAN interface per VLAN, and
+//! so on.
 
 mod supported;
 
@@ -22,6 +23,9 @@ pub const BRIDGE_NAME: &str = "br-lan";
 /// IFNAMSIZ - 1.
 const MAX_IFNAME_LEN: usize = 15;
 
+/// Namespace of the clixon-switch YANG module.
+const SWITCH_NS: &str = "urn:github:albrechtl:clixon-switch";
+
 // ---------------------------------------------------------------------------
 // RFC 7951 JSON
 // ---------------------------------------------------------------------------
@@ -31,6 +35,12 @@ const MAX_IFNAME_LEN: usize = 15;
 pub struct Config {
     #[serde(rename = "openconfig-interfaces:interfaces")]
     pub interfaces: Option<Interfaces>,
+    #[serde(rename = "clixon-switch:vlans")]
+    pub vlans: Option<Vlans>,
+    #[serde(rename = "clixon-switch:switch")]
+    pub switch: Option<Switch>,
+    #[serde(rename = "clixon-switch:port-based-vlans")]
+    pub port_based_vlans: Option<PortBasedVlans>,
 }
 
 impl Config {
@@ -86,6 +96,11 @@ pub struct SwitchedVlanConfig {
     pub interface_mode: Option<String>,
     #[serde(default, deserialize_with = "opt_int")]
     pub access_vlan: Option<u16>,
+    #[serde(default, deserialize_with = "opt_int")]
+    pub native_vlan: Option<u16>,
+    /// VLAN ids, or ranges "x..y".
+    #[serde(default)]
+    pub trunk_vlans: Vec<Scalar>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -126,6 +141,69 @@ pub struct Address {
 pub struct AddressConfig {
     #[serde(default, deserialize_with = "opt_int")]
     pub prefix_length: Option<u8>,
+}
+
+/// `/vlans`: the VLAN database.
+#[derive(Debug, Default, Deserialize)]
+pub struct Vlans {
+    #[serde(default)]
+    pub vlan: Vec<VlanEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VlanEntry {
+    #[serde(rename = "vlan-id", default, deserialize_with = "opt_int")]
+    pub vlan_id: Option<u16>,
+    #[serde(default)]
+    pub config: VlanEntryConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct VlanEntryConfig {
+    #[serde(default, deserialize_with = "opt_int")]
+    pub vlan_id: Option<u16>,
+    pub name: Option<String>,
+    /// ACTIVE (default) or SUSPENDED.
+    pub status: Option<String>,
+}
+
+/// `/switch`: switch-wide settings.
+#[derive(Debug, Default, Deserialize)]
+pub struct Switch {
+    #[serde(default)]
+    pub config: SwitchConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct SwitchConfig {
+    /// DOT1Q (default) or PORT_BASED.
+    pub vlan_mode: Option<String>,
+}
+
+/// `/port-based-vlans`.
+#[derive(Debug, Default, Deserialize)]
+pub struct PortBasedVlans {
+    #[serde(default)]
+    pub group: Vec<Group>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Group {
+    #[serde(default, deserialize_with = "opt_int")]
+    pub id: Option<u16>,
+    #[serde(default)]
+    pub config: GroupConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct GroupConfig {
+    #[serde(default, deserialize_with = "opt_int")]
+    pub id: Option<u16>,
+    pub name: Option<String>,
+    #[serde(default)]
+    pub port: Vec<String>,
 }
 
 /// A leaf that may arrive as a JSON number or a string. RFC 7951 quotes
@@ -176,6 +254,10 @@ where
 /// What the kernel should look like, independent of how it gets there.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DesiredState {
+    pub mode: VlanMode,
+    /// The VLANs by id: the declared VLANs in 802.1Q mode, the groups in
+    /// port-based mode.
+    pub vlans: BTreeMap<u16, Vlan>,
     /// Switch ports by name. Ports of the switch that are missing here are
     /// taken out of the bridge and set down.
     pub ports: BTreeMap<String, Port>,
@@ -183,11 +265,65 @@ pub struct DesiredState {
     pub svis: BTreeMap<String, Svi>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+impl DesiredState {
+    /// Whether frames of `vlan` are forwarded at all. VLANs missing from
+    /// [`DesiredState::vlans`] count as active, so that a state built by hand
+    /// needs no VLAN database.
+    pub fn vlan_active(&self, vlan: u16) -> bool {
+        self.vlans.get(&vlan).is_none_or(|v| v.active)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum VlanMode {
+    /// IEEE 802.1Q: declared VLANs, access and trunk ports.
+    #[default]
+    Dot1q,
+    /// Ports in disjoint, untagged groups.
+    PortBased,
+}
+
+impl VlanMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            VlanMode::Dot1q => "DOT1Q",
+            VlanMode::PortBased => "PORT_BASED",
+        }
+    }
+}
+
+/// A declared VLAN, or a port-based VLAN group.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Vlan {
+    pub name: Option<String>,
+    /// false for status SUSPENDED: no port carries the VLAN.
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Port {
     pub enabled: bool,
-    /// Untagged VLAN and PVID of the port.
-    pub access_vlan: u16,
+    /// Untagged VLAN and PVID of the port: the access VLAN, the native VLAN
+    /// of a trunk, or the port's group. None: untagged frames are dropped.
+    pub native_vlan: Option<u16>,
+    /// VLANs the port carries tagged. Never contains `native_vlan`.
+    pub tagged_vlans: BTreeSet<u16>,
+}
+
+impl Port {
+    /// An access port, or a port in a port-based group.
+    pub fn access(vlan: u16) -> Self {
+        Port {
+            enabled: true,
+            native_vlan: Some(vlan),
+            tagged_vlans: BTreeSet::new(),
+        }
+    }
+
+    /// Whether the port carries `vlan`, tagged or not.
+    pub fn carries(&self, vlan: u16) -> bool {
+        self.native_vlan == Some(vlan) || self.tagged_vlans.contains(&vlan)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -212,8 +348,18 @@ impl fmt::Display for Ipv4Prefix {
 /// A configuration the switch cannot apply.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error {
+    /// The interface the error is about, empty for switch-wide errors.
     pub interface: String,
     pub message: String,
+}
+
+impl Error {
+    fn global(message: String) -> Self {
+        Error {
+            interface: String::new(),
+            message,
+        }
+    }
 }
 
 impl fmt::Display for Error {
@@ -251,10 +397,8 @@ impl std::error::Error for Errors {}
 ///
 /// `switch_ports` are the port names that exist on this switch.
 pub fn validate(json: &str, switch_ports: &BTreeSet<String>) -> Result<DesiredState, Errors> {
-    let parse_error = |e: serde_json::Error| Error {
-        interface: String::new(),
-        message: format!("cannot parse the configuration: {e}"),
-    };
+    let parse_error =
+        |e: serde_json::Error| Error::global(format!("cannot parse the configuration: {e}"));
     let value: serde_json::Value = if json.trim().is_empty() {
         serde_json::Value::Object(serde_json::Map::new())
     } else {
@@ -281,10 +425,32 @@ pub fn desired_state(
     config: &Config,
     switch_ports: &BTreeSet<String>,
 ) -> Result<DesiredState, Errors> {
-    let mut state = DesiredState::default();
     let mut errors = Vec::new();
-
     let interfaces = config.interfaces.as_ref().map_or(&[][..], |i| &i.interface);
+
+    let mode = match config
+        .switch
+        .as_ref()
+        .and_then(|s| s.config.vlan_mode.as_deref())
+    {
+        None | Some("DOT1Q") => VlanMode::Dot1q,
+        Some("PORT_BASED") => VlanMode::PortBased,
+        Some(other) => {
+            errors.push(Error::global(format!(
+                "switch vlan-mode {other} is not supported"
+            )));
+            VlanMode::Dot1q
+        }
+    };
+    let domain = match mode {
+        VlanMode::Dot1q => dot1q_vlans(config, &mut errors),
+        VlanMode::PortBased => port_groups(config, interfaces, switch_ports, &mut errors),
+    };
+
+    let mut state = DesiredState {
+        mode,
+        ..DesiredState::default()
+    };
     for interface in interfaces {
         let mut err = |message: String| {
             errors.push(Error {
@@ -296,14 +462,14 @@ pub fn desired_state(
         // Compare the identity without its prefix: RFC 7951 qualifies it with
         // the module name, XML-derived trees may carry the YANG prefix.
         let if_type = interface.config.if_type.as_deref();
-        match if_type.map(|t| t.rsplit(':').next().unwrap_or(t)) {
-            Some("ethernetCsmacd") => match port(interface, switch_ports) {
+        match if_type.map(unprefixed) {
+            Some("ethernetCsmacd") => match port(interface, switch_ports, &domain) {
                 Ok(p) => {
                     state.ports.insert(interface.name.clone(), p);
                 }
                 Err(messages) => messages.into_iter().for_each(&mut err),
             },
-            Some("l3ipvlan") => match svi(interface, switch_ports) {
+            Some("l3ipvlan") => match svi(interface, switch_ports, &domain) {
                 Ok(s) => {
                     state.svis.insert(interface.name.clone(), s);
                 }
@@ -316,6 +482,7 @@ pub fn desired_state(
             None => err("type is missing".into()),
         }
     }
+    state.vlans = domain.vlans;
 
     check_unique_vlans(&state, &mut errors);
     check_unique_addresses(&state, &mut errors);
@@ -327,7 +494,153 @@ pub fn desired_state(
     }
 }
 
-fn port(interface: &Interface, switch_ports: &BTreeSet<String>) -> Result<Port, Vec<String>> {
+fn unprefixed(identity: &str) -> &str {
+    identity.rsplit(':').next().unwrap_or(identity)
+}
+
+/// The VLANs ports and SVIs may use, in either mode.
+struct Domain {
+    mode: VlanMode,
+    vlans: BTreeMap<u16, Vlan>,
+    /// Port-based mode: the group of each port.
+    group_of_port: BTreeMap<String, u16>,
+}
+
+impl Domain {
+    /// Checks that `id` is a valid, declared VLAN (or group).
+    fn declared(&self, id: u64) -> Result<u16, String> {
+        let id = check_vlan_id(id)?;
+        match (self.vlans.contains_key(&id), self.mode) {
+            (true, _) => Ok(id),
+            (false, VlanMode::Dot1q) => Err(format!("VLAN {id} is not declared in vlans")),
+            (false, VlanMode::PortBased) => {
+                Err(format!("port-based-vlans group {id} does not exist"))
+            }
+        }
+    }
+
+    fn active(&self, id: u16) -> bool {
+        self.vlans.get(&id).is_some_and(|v| v.active)
+    }
+}
+
+fn dot1q_vlans(config: &Config, errors: &mut Vec<Error>) -> Domain {
+    if config
+        .port_based_vlans
+        .as_ref()
+        .is_some_and(|p| !p.group.is_empty())
+    {
+        errors.push(Error::global(
+            "port-based-vlans requires switch vlan-mode PORT_BASED".into(),
+        ));
+    }
+
+    let mut vlans = BTreeMap::new();
+    for entry in config.vlans.as_ref().map_or(&[][..], |v| &v.vlan) {
+        let Some(id) = entry.config.vlan_id.or(entry.vlan_id) else {
+            errors.push(Error::global("vlans: vlan without vlan-id".into()));
+            continue;
+        };
+        let id = match check_vlan_id(u64::from(id)) {
+            Ok(id) => id,
+            Err(e) => {
+                errors.push(Error::global(format!("vlans: {e}")));
+                continue;
+            }
+        };
+        let active = match entry.config.status.as_deref() {
+            None | Some("ACTIVE") => true,
+            Some("SUSPENDED") => false,
+            Some(other) => {
+                errors.push(Error::global(format!(
+                    "vlans: VLAN {id}: status {other} is not supported"
+                )));
+                true
+            }
+        };
+        vlans.insert(
+            id,
+            Vlan {
+                name: entry.config.name.clone(),
+                active,
+            },
+        );
+    }
+
+    Domain {
+        mode: VlanMode::Dot1q,
+        vlans,
+        group_of_port: BTreeMap::new(),
+    }
+}
+
+fn port_groups(
+    config: &Config,
+    interfaces: &[Interface],
+    switch_ports: &BTreeSet<String>,
+    errors: &mut Vec<Error>,
+) -> Domain {
+    if config.vlans.as_ref().is_some_and(|v| !v.vlan.is_empty()) {
+        errors.push(Error::global(
+            "vlans requires switch vlan-mode DOT1Q; in PORT_BASED mode use port-based-vlans".into(),
+        ));
+    }
+
+    let mut vlans = BTreeMap::new();
+    let mut group_of_port = BTreeMap::new();
+    for group in config
+        .port_based_vlans
+        .as_ref()
+        .map_or(&[][..], |p| &p.group)
+    {
+        let Some(id) = group.config.id.or(group.id) else {
+            errors.push(Error::global("port-based-vlans: group without id".into()));
+            continue;
+        };
+        let id = match check_vlan_id(u64::from(id)) {
+            Ok(id) => id,
+            Err(e) => {
+                errors.push(Error::global(format!("port-based-vlans group {id}: {e}")));
+                continue;
+            }
+        };
+        vlans.insert(
+            id,
+            Vlan {
+                name: group.config.name.clone(),
+                active: true,
+            },
+        );
+
+        for port in &group.config.port {
+            let is_port = interfaces.iter().any(|i| {
+                &i.name == port
+                    && i.config.if_type.as_deref().map(unprefixed) == Some("ethernetCsmacd")
+            });
+            if !is_port || !switch_ports.contains(port) {
+                errors.push(Error::global(format!(
+                    "port-based-vlans group {id}: {port} is not a configured switch port"
+                )));
+            } else if let Some(other) = group_of_port.insert(port.clone(), id) {
+                errors.push(Error::global(format!(
+                    "port-based-vlans group {id}: {port} is already a member of group {other}"
+                )));
+            }
+        }
+    }
+
+    Domain {
+        mode: VlanMode::PortBased,
+        vlans,
+        group_of_port,
+    }
+}
+
+fn port(
+    interface: &Interface,
+    switch_ports: &BTreeSet<String>,
+    domain: &Domain,
+) -> Result<Port, Vec<String>> {
     let mut errors = Vec::new();
 
     if !switch_ports.contains(&interface.name) {
@@ -346,43 +659,140 @@ fn port(interface: &Interface, switch_ports: &BTreeSet<String>) -> Result<Port, 
         .as_ref()
         .and_then(|e| e.switched_vlan.as_ref())
         .map(|s| &s.config);
-    let access_vlan = match vlan_config {
-        None => {
-            errors.push("ethernet/switched-vlan/config is required: interface-mode ACCESS and an access-vlan".into());
-            None
-        }
-        Some(c) => match (c.interface_mode.as_deref(), c.access_vlan) {
-            (Some("TRUNK"), _) => {
-                errors.push("interface-mode TRUNK is not supported yet".into());
-                None
-            }
-            (Some("ACCESS") | None, Some(vlan)) => Some(vlan),
-            (Some("ACCESS") | None, None) => {
-                errors.push("switched-vlan access-vlan is required".into());
-                None
-            }
-            (Some(mode), _) => {
-                errors.push(format!("interface-mode {mode} is not supported"));
-                None
-            }
-        },
-    };
-    if let Some(vlan) = access_vlan {
-        if let Err(e) = check_vlan_id(u64::from(vlan)) {
-            errors.push(e);
-        }
-    }
 
-    match access_vlan {
-        Some(access_vlan) if errors.is_empty() => Ok(Port {
+    let vlans = match domain.mode {
+        VlanMode::Dot1q => match vlan_config {
+            None => {
+                errors.push("ethernet/switched-vlan/config is required: interface-mode ACCESS with an access-vlan, or TRUNK".into());
+                None
+            }
+            Some(c) => switched_vlans(c, domain, &mut errors),
+        },
+        VlanMode::PortBased => {
+            if vlan_config.is_some() {
+                errors.push("switched-vlan requires switch vlan-mode DOT1Q; in PORT_BASED mode add the port to a port-based-vlans group".into());
+            }
+            match domain.group_of_port.get(&interface.name) {
+                Some(group) => Some((Some(*group), BTreeSet::new())),
+                None => {
+                    errors.push("not a member of any port-based-vlans group".into());
+                    None
+                }
+            }
+        }
+    };
+
+    match vlans {
+        Some((native_vlan, tagged_vlans)) if errors.is_empty() => Ok(Port {
             enabled: interface.config.enabled.unwrap_or(true),
-            access_vlan,
+            native_vlan,
+            tagged_vlans,
         }),
         _ => Err(errors),
     }
 }
 
-fn svi(interface: &Interface, switch_ports: &BTreeSet<String>) -> Result<Svi, Vec<String>> {
+/// The native and tagged VLANs of an 802.1Q port. Suspended VLANs are left
+/// out.
+fn switched_vlans(
+    c: &SwitchedVlanConfig,
+    domain: &Domain,
+    errors: &mut Vec<String>,
+) -> Option<(Option<u16>, BTreeSet<u16>)> {
+    match c.interface_mode.as_deref() {
+        Some("ACCESS") | None => {
+            // YANG's when statements should keep these out, but clixon 7.8
+            // does not enforce them on every path.
+            let trunk_leaves = c.native_vlan.is_some() || !c.trunk_vlans.is_empty();
+            let access = c.access_vlan.map(|v| declared(domain, v, errors));
+            if trunk_leaves {
+                errors.push("native-vlan and trunk-vlans require interface-mode TRUNK".into());
+            }
+            match access {
+                None => {
+                    errors.push("switched-vlan access-vlan is required".into());
+                    None
+                }
+                Some(None) => None,
+                Some(Some(vlan)) => {
+                    Some((Some(vlan).filter(|v| domain.active(*v)), BTreeSet::new()))
+                }
+            }
+        }
+        Some("TRUNK") => {
+            let native = c.native_vlan.map(|v| declared(domain, v, errors));
+            let mut ok = !matches!(native, Some(None));
+            if c.access_vlan.is_some() {
+                errors.push("access-vlan requires interface-mode ACCESS".into());
+                ok = false;
+            }
+
+            let mut tagged = BTreeSet::new();
+            if c.trunk_vlans.is_empty() {
+                // All VLANs allowed: every declared one.
+                tagged.extend(domain.vlans.keys());
+            }
+            for entry in &c.trunk_vlans {
+                match trunk_entry(entry, domain) {
+                    Ok(ids) => tagged.extend(ids),
+                    Err(e) => {
+                        errors.push(e);
+                        ok = false;
+                    }
+                }
+            }
+
+            let native = native.flatten();
+            tagged.retain(|v| Some(*v) != native && domain.active(*v));
+            ok.then(|| (native.filter(|v| domain.active(*v)), tagged))
+        }
+        Some(mode) => {
+            errors.push(format!("interface-mode {mode} is not supported"));
+            None
+        }
+    }
+}
+
+/// `id` if it is declared, otherwise None and an error.
+fn declared(domain: &Domain, id: u16, errors: &mut Vec<String>) -> Option<u16> {
+    domain
+        .declared(u64::from(id))
+        .map_err(|e| errors.push(e))
+        .ok()
+}
+
+/// One trunk-vlans entry: a declared VLAN id, or a range "x..y" standing for
+/// the declared VLANs in it.
+fn trunk_entry(entry: &Scalar, domain: &Domain) -> Result<Vec<u16>, String> {
+    if let Some(id) = entry.as_u64() {
+        return domain.declared(id).map(|id| vec![id]);
+    }
+    let range = entry.to_string();
+    let bounds = range.split_once("..").and_then(|(low, high)| {
+        Some((
+            low.trim().parse::<u64>().ok()?,
+            high.trim().parse::<u64>().ok()?,
+        ))
+    });
+    let Some((low, high)) = bounds else {
+        return Err(format!(
+            "trunk-vlans \"{range}\" is neither a VLAN id nor a range x..y"
+        ));
+    };
+    let (low, high) = (check_vlan_id(low)?, check_vlan_id(high)?);
+    if low >= high {
+        return Err(format!(
+            "trunk-vlans range {range}: {low} is not below {high}"
+        ));
+    }
+    Ok(domain.vlans.range(low..=high).map(|(id, _)| *id).collect())
+}
+
+fn svi(
+    interface: &Interface,
+    switch_ports: &BTreeSet<String>,
+    domain: &Domain,
+) -> Result<Svi, Vec<String>> {
     let mut errors = Vec::new();
     let name = interface.name.as_str();
 
@@ -406,26 +816,13 @@ fn svi(interface: &Interface, switch_ports: &BTreeSet<String>) -> Result<Svi, Ve
     };
 
     let vlan = match routed.config.vlan.as_ref() {
-        None => {
-            errors.push("routed-vlan/config/vlan is required".into());
-            None
-        }
+        None => Err("routed-vlan/config/vlan is required".into()),
         Some(v) => match v.as_u64() {
-            None => {
-                errors.push(format!(
-                    "routed-vlan vlan \"{v}\": VLAN names are not supported, use the VLAN id"
-                ));
-                None
-            }
-            Some(id) => match check_vlan_id(id) {
-                Ok(id) => Some(id),
-                Err(e) => {
-                    errors.push(e);
-                    None
-                }
-            },
+            Some(id) => domain.declared(id),
+            None => vlan_by_name(&v.to_string(), domain),
         },
     };
+    let vlan = vlan.map_err(|e| errors.push(e)).ok();
 
     let mut addresses = BTreeSet::new();
     let entries = routed
@@ -456,6 +853,32 @@ fn svi(interface: &Interface, switch_ports: &BTreeSet<String>) -> Result<Svi, Ve
             addresses,
         }),
         _ => Err(errors),
+    }
+}
+
+fn vlan_by_name(name: &str, domain: &Domain) -> Result<u16, String> {
+    let what = match domain.mode {
+        VlanMode::Dot1q => "VLAN",
+        VlanMode::PortBased => "port-based-vlans group",
+    };
+    let ids: Vec<u16> = domain
+        .vlans
+        .iter()
+        .filter(|(_, v)| v.name.as_deref() == Some(name))
+        .map(|(id, _)| *id)
+        .collect();
+    match ids[..] {
+        [id] => Ok(id),
+        [] => Err(format!(
+            "routed-vlan vlan \"{name}\": no {what} has this name"
+        )),
+        _ => Err(format!(
+            "routed-vlan vlan \"{name}\": the name is ambiguous ({what}s {})",
+            ids.iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
     }
 }
 
@@ -546,8 +969,9 @@ impl Default for InterfaceState {
     }
 }
 
-/// State data for the interfaces in `applied`, as XML that clixon merges into
-/// the configuration tree. Interfaces missing from `states` are skipped.
+/// State data for the configuration in `applied`, as XML that clixon merges
+/// into the configuration tree: several top-level elements, the interfaces
+/// first. Interfaces missing from `states` are skipped.
 pub fn state_xml(applied: &DesiredState, states: &BTreeMap<String, InterfaceState>) -> String {
     use std::fmt::Write;
 
@@ -586,6 +1010,63 @@ pub fn state_xml(applied: &DesiredState, states: &BTreeMap<String, InterfaceStat
         xml.push_str("</interface>");
     }
     xml.push_str("</interfaces>");
+
+    let _ = write!(
+        xml,
+        r#"<switch xmlns="{SWITCH_NS}"><state><vlan-mode>{}</vlan-mode></state></switch>"#,
+        applied.mode.as_str()
+    );
+
+    let members = |vlan: u16| {
+        applied
+            .ports
+            .iter()
+            .filter(move |(_, port)| port.carries(vlan))
+            .map(|(name, _)| escape(name))
+    };
+    let name_xml = |vlan: &Vlan| {
+        vlan.name
+            .as_deref()
+            .map(|n| format!("<name>{}</name>", escape(n)))
+            .unwrap_or_default()
+    };
+    match applied.mode {
+        VlanMode::Dot1q if !applied.vlans.is_empty() => {
+            let _ = write!(xml, r#"<vlans xmlns="{SWITCH_NS}">"#);
+            for (id, vlan) in &applied.vlans {
+                let _ = write!(
+                    xml,
+                    "<vlan><vlan-id>{id}</vlan-id><state><vlan-id>{id}</vlan-id>{}<status>{}</status></state><members>",
+                    name_xml(vlan),
+                    if vlan.active { "ACTIVE" } else { "SUSPENDED" }
+                );
+                for port in members(*id) {
+                    let _ = write!(
+                        xml,
+                        "<member><state><interface>{port}</interface></state></member>"
+                    );
+                }
+                xml.push_str("</members></vlan>");
+            }
+            xml.push_str("</vlans>");
+        }
+        VlanMode::PortBased if !applied.vlans.is_empty() => {
+            let _ = write!(xml, r#"<port-based-vlans xmlns="{SWITCH_NS}">"#);
+            for (id, vlan) in &applied.vlans {
+                let _ = write!(
+                    xml,
+                    "<group><id>{id}</id><state><id>{id}</id>{}",
+                    name_xml(vlan)
+                );
+                for port in members(*id) {
+                    let _ = write!(xml, "<port>{port}</port>");
+                }
+                xml.push_str("</state></group>");
+            }
+            xml.push_str("</port-based-vlans>");
+        }
+        _ => {}
+    }
     xml
 }
 

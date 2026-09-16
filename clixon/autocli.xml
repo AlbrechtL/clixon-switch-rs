@@ -3,6 +3,11 @@
     <!-- Generate CLI commands only for the switch's data model. -->
     <module-default>false</module-default>
     <rule>
+      <name>switch</name>
+      <operation>enable</operation>
+      <module-name>clixon-switch</module-name>
+    </rule>
+    <rule>
       <name>interfaces</name>
       <operation>enable</operation>
       <module-name>openconfig-interfaces</module-name>

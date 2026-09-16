@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
 
-use switch_model::{DesiredState, Ipv4Prefix, Port, Svi};
+use switch_model::{DesiredState, Ipv4Prefix, Port, Svi, Vlan, VlanMode};
 use switch_net::fake::FakeNet;
 use switch_net::{plan, reconcile, Link, LinkKind, NetBackend, Op, VlanFlags, BRIDGE_NAME};
 
@@ -23,16 +23,10 @@ fn prefix(a: u8, b: u8, c: u8, d: u8, len: u8) -> Ipv4Prefix {
 
 fn factory_default() -> DesiredState {
     DesiredState {
+        mode: VlanMode::Dot1q,
+        vlans: BTreeMap::from([(1, active())]),
         ports: (1..=8)
-            .map(|i| {
-                (
-                    format!("lan{i}"),
-                    Port {
-                        enabled: true,
-                        access_vlan: 1,
-                    },
-                )
-            })
+            .map(|i| (format!("lan{i}"), Port::access(1)))
             .collect(),
         svis: BTreeMap::from([(
             "vlan1".to_string(),
@@ -42,6 +36,13 @@ fn factory_default() -> DesiredState {
                 addresses: BTreeSet::from([prefix(192, 168, 1, 1, 24)]),
             },
         )]),
+    }
+}
+
+fn active() -> Vlan {
+    Vlan {
+        name: None,
+        active: true,
     }
 }
 
@@ -194,7 +195,7 @@ fn access_vlan_change() {
     run(&mut net, &factory_default());
 
     let mut desired = factory_default();
-    desired.ports.get_mut("lan3").unwrap().access_vlan = 20;
+    desired.ports.get_mut("lan3").unwrap().native_vlan = Some(20);
     let ops = run(&mut net, &desired);
 
     assert_eq!(
@@ -291,4 +292,124 @@ fn empty_configuration_isolates_all_ports() {
     }
     // The conduit stays up, so a later commit works without a restart.
     assert!(s.links["eth0"].up);
+}
+
+#[test]
+fn access_port_becomes_trunk() {
+    let mut net = FakeNet::gs1900_8();
+    run(&mut net, &factory_default());
+
+    let mut desired = factory_default();
+    desired.vlans.extend([(10, active()), (20, active())]);
+    desired.ports.insert(
+        "lan2".into(),
+        Port {
+            enabled: true,
+            native_vlan: Some(1),
+            tagged_vlans: BTreeSet::from([10, 20]),
+        },
+    );
+    run(&mut net, &desired);
+
+    assert_eq!(
+        net.state.bridge_vlans["lan2"],
+        BTreeMap::from([(1, ACCESS), (10, TAGGED), (20, TAGGED)])
+    );
+    // Only SVI VLANs reach the CPU.
+    assert_eq!(
+        net.state.bridge_vlans[BRIDGE_NAME],
+        BTreeMap::from([(1, TAGGED)])
+    );
+}
+
+#[test]
+fn native_vlan_change_keeps_a_pvid() {
+    let mut net = FakeNet::gs1900_8();
+    let mut desired = factory_default();
+    desired.vlans.extend([(10, active()), (20, active())]);
+    desired.ports.insert(
+        "lan2".into(),
+        Port {
+            enabled: true,
+            native_vlan: Some(1),
+            tagged_vlans: BTreeSet::from([10, 20]),
+        },
+    );
+    run(&mut net, &desired);
+
+    // Native 1 -> 10, and 1 becomes tagged.
+    let before = net.clone();
+    let port = desired.ports.get_mut("lan2").unwrap();
+    port.native_vlan = Some(10);
+    port.tagged_vlans = BTreeSet::from([1, 20]);
+    let ops = run(&mut net, &desired);
+
+    // Replayed step by step, the port has a PVID after every operation.
+    let mut replay = before;
+    for op in &ops {
+        replay.apply(op).unwrap();
+        assert!(
+            replay.state.bridge_vlans["lan2"].values().any(|f| f.pvid),
+            "no PVID after {op}"
+        );
+    }
+    assert_eq!(
+        net.state.bridge_vlans["lan2"],
+        BTreeMap::from([(1, TAGGED), (10, ACCESS), (20, TAGGED)])
+    );
+}
+
+#[test]
+fn suspended_vlan_has_no_bridge_entries() {
+    let mut net = FakeNet::gs1900_8();
+    run(&mut net, &factory_default());
+
+    // What switch-model makes of VLAN 1 suspended: no port carries it, the
+    // SVI stays.
+    let mut desired = factory_default();
+    desired.vlans.get_mut(&1).unwrap().active = false;
+    for port in desired.ports.values_mut() {
+        port.native_vlan = None;
+    }
+    run(&mut net, &desired);
+
+    let s = &net.state;
+    assert!(s.bridge_vlans.get("lan1").is_none_or(|v| v.is_empty()));
+    assert!(s.bridge_vlans.get(BRIDGE_NAME).is_none_or(|v| v.is_empty()));
+    assert!(s.links.contains_key("vlan1"));
+    assert_eq!(s.links["lan1"].master.as_deref(), Some(BRIDGE_NAME));
+}
+
+#[test]
+fn switch_to_port_based_groups() {
+    let mut net = FakeNet::gs1900_8();
+    run(&mut net, &factory_default());
+
+    // lan1..4 in group 1 with the management SVI, lan5..8 in group 2.
+    let mut desired = factory_default();
+    desired.mode = VlanMode::PortBased;
+    desired.vlans = BTreeMap::from([(1, active()), (2, active())]);
+    for i in 5..=8 {
+        desired.ports.insert(format!("lan{i}"), Port::access(2));
+    }
+    run(&mut net, &desired);
+
+    let s = &net.state;
+    for i in 1..=4 {
+        assert_eq!(
+            s.bridge_vlans[&format!("lan{i}")],
+            BTreeMap::from([(1, ACCESS)])
+        );
+    }
+    for i in 5..=8 {
+        assert_eq!(
+            s.bridge_vlans[&format!("lan{i}")],
+            BTreeMap::from([(2, ACCESS)])
+        );
+    }
+    assert_eq!(s.bridge_vlans[BRIDGE_NAME], BTreeMap::from([(1, TAGGED)]));
+    assert_eq!(
+        s.addresses["vlan1"],
+        BTreeSet::from([prefix(192, 168, 1, 1, 24)])
+    );
 }

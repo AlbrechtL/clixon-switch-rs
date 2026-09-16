@@ -1,16 +1,37 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use switch_model::{state_xml, DesiredState, InterfaceState, Port, Svi};
+use switch_model::{state_xml, DesiredState, InterfaceState, Port, Svi, Vlan, VlanMode};
 
 fn applied() -> DesiredState {
     DesiredState {
-        ports: BTreeMap::from([(
-            "lan1".to_string(),
-            Port {
-                enabled: true,
-                access_vlan: 1,
-            },
-        )]),
+        mode: VlanMode::Dot1q,
+        vlans: BTreeMap::from([
+            (
+                1,
+                Vlan {
+                    name: Some("default".into()),
+                    active: true,
+                },
+            ),
+            (
+                20,
+                Vlan {
+                    name: None,
+                    active: false,
+                },
+            ),
+        ]),
+        ports: BTreeMap::from([
+            ("lan1".to_string(), Port::access(1)),
+            (
+                "lan2".to_string(),
+                Port {
+                    enabled: true,
+                    native_vlan: None,
+                    tagged_vlans: BTreeSet::from([1]),
+                },
+            ),
+        ]),
         svis: BTreeMap::from([(
             "vlan1".to_string(),
             Svi {
@@ -56,8 +77,46 @@ fn ports_and_svis() {
 
 #[test]
 fn interfaces_without_state_are_skipped() {
-    assert_eq!(
-        state_xml(&applied(), &BTreeMap::new()),
-        r#"<interfaces xmlns="http://openconfig.net/yang/interfaces"></interfaces>"#
-    );
+    assert!(state_xml(&applied(), &BTreeMap::new()).starts_with(
+        r#"<interfaces xmlns="http://openconfig.net/yang/interfaces"></interfaces><switch "#
+    ));
+}
+
+#[test]
+fn vlans_with_members() {
+    let xml = state_xml(&applied(), &BTreeMap::new());
+    assert!(xml.contains(
+        r#"<switch xmlns="urn:github:albrechtl:clixon-switch"><state><vlan-mode>DOT1Q</vlan-mode></state></switch>"#
+    ));
+    assert!(xml.contains(r#"<vlans xmlns="urn:github:albrechtl:clixon-switch">"#));
+    // Tagged and untagged members alike.
+    assert!(xml.contains(
+        "<vlan><vlan-id>1</vlan-id><state><vlan-id>1</vlan-id><name>default</name><status>ACTIVE</status></state>\
+         <members><member><state><interface>lan1</interface></state></member>\
+         <member><state><interface>lan2</interface></state></member></members></vlan>"
+    ));
+    assert!(xml.contains(
+        "<vlan><vlan-id>20</vlan-id><state><vlan-id>20</vlan-id><status>SUSPENDED</status></state><members></members></vlan>"
+    ));
+    assert!(!xml.contains("port-based-vlans"));
+}
+
+#[test]
+fn port_based_groups() {
+    let mut applied = applied();
+    applied.mode = VlanMode::PortBased;
+    applied.vlans = BTreeMap::from([(
+        1,
+        Vlan {
+            name: Some("office".into()),
+            active: true,
+        },
+    )]);
+    applied.ports.insert("lan2".into(), Port::access(1));
+    let xml = state_xml(&applied, &BTreeMap::new());
+    assert!(xml.contains("<vlan-mode>PORT_BASED</vlan-mode>"));
+    assert!(xml.contains(
+        r#"<port-based-vlans xmlns="urn:github:albrechtl:clixon-switch"><group><id>1</id><state><id>1</id><name>office</name><port>lan1</port><port>lan2</port></state></group></port-based-vlans>"#
+    ));
+    assert!(!xml.contains("<vlans "));
 }
