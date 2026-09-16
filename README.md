@@ -1,5 +1,9 @@
 # clixon-switch-rs
 
+> **⚠️ Proof of concept.** This project is a proof of concept, created with
+> the help of AI. It has not undergone thorough review or hardening, and
+> should not be assumed suitable for production use.
+
 A [clixon](https://www.clicon.org/) backend plugin, written in Rust, that
 applies an OpenConfig switch configuration to the Linux kernel: DSA switch
 ports in one VLAN-aware bridge, and routed VLAN interfaces with IPv4
