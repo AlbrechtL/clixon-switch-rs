@@ -19,7 +19,13 @@ set -eu
 target=${1:-root@192.168.1.1}
 
 : "${BUILDDIR:?source oe-init-build-env first}"
-plugin=$(ls -t "$BUILDDIR"/tmp/work/*/clixon-switch/*/build/target/*/release/libclixon_switch_plugin.so 2>/dev/null | head -n 1)
+# The packaged copy is stripped and therefore the smallest to copy. The
+# others are what do_install and cargo leave behind.
+plugin=$(ls -t \
+    "$BUILDDIR"/tmp/work/*/clixon-switch/*/packages-split/clixon-switch/usr/lib/clixon-switch/backend/clixon-switch_backend.so \
+    "$BUILDDIR"/tmp/work/*/clixon-switch/*/image/usr/lib/clixon-switch/backend/clixon-switch_backend.so \
+    "$BUILDDIR"/tmp/work/*/clixon-switch/*/*/target/*/release/libclixon_switch_plugin.so \
+    2>/dev/null | head -n 1)
 if [ -z "$plugin" ]; then
     echo "no plugin in $BUILDDIR/tmp/work, run devtool build clixon-switch first" >&2
     exit 1
