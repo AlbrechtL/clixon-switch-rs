@@ -19,6 +19,11 @@
 
 set -eu
 
+# The MANIFEST is sorted the same everywhere: sort and the shell's globs
+# follow the locale, which puts "ietf-snmp@..." before or after
+# "ietf-snmp-common@..." depending on how it treats punctuation.
+export LC_ALL=C
+
 OPENCONFIG_TAG=v5.3.0
 YANGMODELS_COMMIT=a4ea86b06aa63512e280f1665db6eaf8116bf059
 # Installed by clixon itself in /usr/share/clixon.

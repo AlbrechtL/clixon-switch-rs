@@ -13,6 +13,11 @@
 
 set -eu
 
+# The MANIFEST is sorted the same everywhere: sort and the shell's globs
+# follow the locale, which puts "ietf-snmp@..." before or after
+# "ietf-snmp-common@..." depending on how it treats punctuation.
+export LC_ALL=C
+
 MIBS="BRIDGE-MIB Q-BRIDGE-MIB RSTP-MIB"
 LIBSMI_VERSION=0.5.0
 

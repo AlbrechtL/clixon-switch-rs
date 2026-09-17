@@ -16,7 +16,6 @@ release/models/vlan/openconfig-vlan-types.yang
 release/models/vlan/openconfig-vlan.yang
 third_party/ietf/iana-if-type.yang
 third_party/ietf/ietf-interfaces.yang
-yangmodels/standard/ietf/RFC/ietf-snmp@2014-12-10.yang
 yangmodels/standard/ietf/RFC/ietf-snmp-common@2014-12-10.yang
 yangmodels/standard/ietf/RFC/ietf-snmp-community@2014-12-10.yang
 yangmodels/standard/ietf/RFC/ietf-snmp-engine@2014-12-10.yang
@@ -28,5 +27,6 @@ yangmodels/standard/ietf/RFC/ietf-snmp-tls@2014-12-10.yang
 yangmodels/standard/ietf/RFC/ietf-snmp-tsm@2014-12-10.yang
 yangmodels/standard/ietf/RFC/ietf-snmp-usm@2014-12-10.yang
 yangmodels/standard/ietf/RFC/ietf-snmp-vacm@2014-12-10.yang
+yangmodels/standard/ietf/RFC/ietf-snmp@2014-12-10.yang
 yangmodels/standard/ietf/RFC/ietf-x509-cert-to-name@2014-12-10.yang
 yangmodels/standard/ietf/RFC/ietf-yang-smiv2@2012-06-22.yang
