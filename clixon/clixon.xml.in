@@ -35,6 +35,12 @@
   <!-- Explicit save: RESTCONF edits change running only. Persist with the
        CLI "save" command or a copy-config running -> startup. -->
   <CLICON_RESTCONF_STARTUP_DONTUPDATE>true</CLICON_RESTCONF_STARTUP_DONTUPDATE>
+  <!-- SNMP: clixon_snmp, started by the backend plugin together with
+       snmpd, serves these MIBs from state data over AgentX. -->
+  <CLICON_SNMP_MIB>BRIDGE-MIB</CLICON_SNMP_MIB>
+  <CLICON_SNMP_MIB>Q-BRIDGE-MIB</CLICON_SNMP_MIB>
+  <CLICON_SNMP_MIB>RSTP-MIB</CLICON_SNMP_MIB>
+  <CLICON_SNMP_AGENT_SOCK>unix:@RUNSTATEDIR@/clixon-switch/agentx.sock</CLICON_SNMP_AGENT_SOCK>
   <!-- The web UI: clixon_restconf serves the static files below / itself,
        so the page is on the same origin as /restconf, which (with
        /.well-known) is matched first. / is index.html. Symbolic links are

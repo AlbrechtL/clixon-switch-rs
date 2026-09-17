@@ -305,6 +305,153 @@ request GET "$VLAN1_IPV4_ALL" >/dev/null
 check "state: no lease" null "$(jq -r '.["openconfig-if-ip:ipv4"].state["clixon-switch:dhcp-lease"]' /tmp/body)"
 request DELETE "$IFACES/interface=lan1/config/description" >/dev/null
 
+echo "# SNMP"
+# SNMPv3, read-only. snmpd answers the system group and IF-MIB, clixon_snmp
+# the bridge MIBs from state data. The keys are localized for the engine ID
+# below: scripts/snmp-localize-key --engine-id 80:00:1f:88:04:74:65:73:74 \
+#     --auth authpass123 --priv privpass123
+SNMP="$RC/data/ietf-snmp:snmp"
+ENGINE_ID=80:00:1f:88:04:74:65:73:74
+AUTH_KEY=61:27:5e:7f:05:5c:63:11:09:6a:1f:c0:ec:1c:78:1a:cf:5e:23:d8
+PRIV_KEY=41:f5:c6:d4:a6:dd:41:b7:c0:cb:1c:ef:24:dd:d2:5f
+export MIBS=
+# The client tools' own persistent directory.
+export SNMP_PERSISTENT_DIR=/tmp/snmp-client
+mkdir -p "$SNMP_PERSISTENT_DIR/cert_indexes"
+snmpd_count() { pgrep -xc snmpd || true; }
+subagent_count() { pgrep -xc clixon_snmp || true; }
+# snmp <get|getnext|walk|set> [options] <args>: as user nms (SNMP_USER),
+# authPriv, values only, octet strings in hex (-Oa: as text)
+snmp() {
+    cmd=$1
+    shift
+    options=""
+    while [ "${1#-}" != "$1" ]; do
+        options="$options $1"
+        shift
+    done
+    # shellcheck disable=SC2086
+    "snmp$cmd" -v3 -l authPriv -u "${SNMP_USER:-nms}" -a SHA -A authpass123 -x AES -X privpass123 \
+        -On -Oqv -Ox $options -t 2 -r 0 127.0.0.1 "$@" 2>&1
+}
+snmp_config() {
+    # snmp_config <engine JSON> <vacm access JSON> [user]
+    jq -nc --argjson engine "$1" --argjson access "$2" --arg auth "$AUTH_KEY" --arg priv "$PRIV_KEY" \
+        --arg user "${3:-nms}" '{
+        "ietf-snmp:snmp": {
+            engine: $engine,
+            usm: {local: {user: [{name: $user, auth: {sha: {key: $auth}}, priv: {aes: {key: $priv}}}]}},
+            vacm: {group: [{name: "ro", member: [{"security-name": $user, "security-model": ["usm"]}],
+                            access: [$access]}],
+                   view: [{name: "all", include: ["1.3.6.1"]}]}}}'
+}
+ENGINE=$(jq -nc --arg id "$ENGINE_ID" '{enabled: true, "engine-id": $id, version: {v3: [null]},
+    listen: [{name: "lo", udp: {ip: "127.0.0.1", port: 161}}]}')
+ACCESS='{"context":"","security-model":"usm","security-level":"auth-priv","read-view":"all"}'
+
+check "no snmpd while off" 0 "$(snmpd_count)"
+rejected "SNMPv2c" PUT "$SNMP" "$(snmp_config "$(echo "$ENGINE" | jq -c '.version = {v2c: [null], v3: [null]}')" "$ACCESS")"
+rejected "community" PUT "$SNMP" "$(snmp_config "$ENGINE" "$ACCESS" | jq -c '.["ietf-snmp:snmp"].community = [{index: "public", "text-name": "public", "security-name": "nms"}]')"
+rejected "MD5" PUT "$SNMP" "$(snmp_config "$ENGINE" "$ACCESS" | jq -c '.["ietf-snmp:snmp"].usm.local.user[0].auth = {md5: {key: "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"}}')"
+rejected "write view" PUT "$SNMP" "$(snmp_config "$ENGINE" "$(echo "$ACCESS" | jq -c '.["write-view"] = "all"')")"
+rejected "no-auth-no-priv" PUT "$SNMP" "$(snmp_config "$ENGINE" "$(echo "$ACCESS" | jq -c '.["security-level"] = "no-auth-no-priv"')")"
+rejected "wildcard view" PUT "$SNMP" "$(snmp_config "$ENGINE" "$ACCESS" | jq -c '.["ietf-snmp:snmp"].vacm.view[0].include = ["1.3.*"]')"
+rejected "no listen" PUT "$SNMP" "$(snmp_config "$(echo "$ENGINE" | jq -c 'del(.listen)')" "$ACCESS")"
+rejected "short auth key" PUT "$SNMP" "$(snmp_config "$ENGINE" "$ACCESS" | jq -c '.["ietf-snmp:snmp"].usm.local.user[0].auth.sha.key = "00:11"')"
+check "rejected commits start no snmpd" 0 "$(snmpd_count)"
+
+status=$(request PATCH "$RC/data" '{"ietf-restconf:data":{"clixon-switch:system":{"config":{"contact":"noc@example.com","location":"rack 3"}}}}')
+check "system contact and location" 204 "$status"
+status=$(request PUT "$SNMP" "$(snmp_config "$ENGINE" "$ACCESS")")
+check "enable SNMP" 201 "$status"
+[ "$status" = 201 ] || cat /tmp/body
+check "one snmpd" 1 "$(snmpd_count)"
+check "one clixon_snmp" 1 "$(subagent_count)"
+check "snmpd.conf readable by root only" 600 "$(stat -c %a "$XMLDB/snmpd.conf")"
+request GET "$SNMP/engine" >/dev/null
+check "state: engine ID in use" "$ENGINE_ID" "$(jq -r '.["ietf-snmp:engine"]["clixon-switch:engine-id-in-use"]' /tmp/body)"
+check "sysContact" '"noc@example.com"' "$(snmp get -Oa 1.3.6.1.2.1.1.4.0)"
+check "sysLocation" '"rack 3"' "$(snmp get -Oa 1.3.6.1.2.1.1.6.0)"
+check "sysName" "\"$(cat /proc/sys/kernel/hostname)\"" "$(snmp get -Oa 1.3.6.1.2.1.1.5.0)"
+check "sysServices" 2 "$(snmp get 1.3.6.1.2.1.1.7.0)"
+lan1_index=$(cat /sys/class/net/lan1/ifindex)
+check "IF-MIB ifName of lan1" '"lan1"' "$(snmp get -Oa "1.3.6.1.2.1.31.1.1.1.1.$lan1_index")"
+check "no answer to SNMPv2c" true "$(snmpget -v2c -c public -t 1 -r 0 127.0.0.1 1.3.6.1.2.1.1.5.0 >/dev/null 2>&1 || echo true)"
+check "wrong passphrase" true "$(snmpget -v3 -l authPriv -u nms -a SHA -A wrongpass123 -x AES -X privpass123 -t 1 -r 0 127.0.0.1 1.3.6.1.2.1.1.5.0 >/dev/null 2>&1 || echo true)"
+check "authNoPriv gets no access" true "$(snmpget -v3 -l authNoPriv -u nms -a SHA -A authpass123 -Oqv -t 1 -r 0 127.0.0.1 1.3.6.1.2.1.1.5.0 2>&1 | grep -q authorizationError && echo true)"
+check "sysContact is not writable" true "$(snmp set 1.3.6.1.2.1.1.4.0 s hacker | grep -qE 'notWritable|noAccess|noCreation' && echo true)"
+
+# BRIDGE-MIB
+check "dot1dBaseNumPorts" 8 "$(snmp get 1.3.6.1.2.1.17.1.2.0)"
+check "dot1dBaseType transparent-only" 2 "$(snmp get 1.3.6.1.2.1.17.1.3.0)"
+check "dot1dBasePortIfIndex of port 1 is lan1" "$lan1_index" "$(snmp get 1.3.6.1.2.1.17.1.4.1.2.1)"
+check "no dot1dStp while spanning tree is off" true "$(snmp get 1.3.6.1.2.1.17.2.2.0 | grep -q 'No Such' && echo true)"
+check "no RSTP-MIB while spanning tree is off" true "$(snmp get 1.3.6.1.2.1.17.2.16.0 | grep -q 'No Such' && echo true)"
+check "not writable: dot1dStpPriority" true "$(snmp set 1.3.6.1.2.1.17.2.2.0 i 4096 | grep -qE 'notWritable|noAccess|noCreation' && echo true)"
+
+# Q-BRIDGE-MIB follows commits.
+declare_vlans 20
+request PATCH "$(switched_vlan lan3)" '{"openconfig-vlan:config":{"interface-mode":"ACCESS","access-vlan":20}}' >/dev/null
+request PUT "$VLANS/vlan=20/config" '{"clixon-switch:config":{"vlan-id":20,"name":"office"}}' >/dev/null
+check "dot1qPvid of lan3" 20 "$(snmp get 1.3.6.1.2.1.17.7.1.4.5.1.1.3)"
+check "dot1qVlanStaticName" '"office"' "$(snmp get -Oa 1.3.6.1.2.1.17.7.1.4.3.1.1.20)"
+check "dot1qVlanStaticEgressPorts: port 3" 20 "$(snmp get 1.3.6.1.2.1.17.7.1.4.3.1.2.20 | tr -d ' "')"
+check "dot1qVlanCurrentUntaggedPorts of VLAN 1: all but port 3" DF "$(snmp get 1.3.6.1.2.1.17.7.1.4.2.1.5.0.1 | tr -d ' "')"
+check "dot1qNumVlans" 2 "$(snmp get 1.3.6.1.2.1.17.7.1.1.4.0)"
+# The DHCP server's link, behind lan8, sends an ARP request: its address is
+# learned on port 8 in VLAN 1.
+server_mac=$(cat /sys/class/net/dhcp-srv/address)
+busybox ping -c 1 -W 1 -I dhcp-srv 10.99.0.99 >/dev/null 2>&1 || true
+mac_oid=$(for octet in $(echo "$server_mac" | tr : ' '); do printf '.%d' "0x$octet"; done)
+check "dot1qTpFdbPort: server on port 8" 8 "$(snmp get "1.3.6.1.2.1.17.7.1.2.2.1.2.1$mac_oid")"
+check "dot1qTpFdbStatus learned" 3 "$(snmp get "1.3.6.1.2.1.17.7.1.2.2.1.3.1$mac_oid")"
+check "dot1dTpFdbPort: server on port 8" 8 "$(snmp get "1.3.6.1.2.1.17.4.3.1.2$mac_oid")"
+walked=$(snmp walk 1.3.6.1.2.1.17)
+check "walk of the bridge MIBs ends cleanly" true "$(echo "$walked" | grep -qE 'OID not increasing|Error' && echo false || echo true)"
+request PATCH "$(switched_vlan lan3)" '{"openconfig-vlan:config":{"interface-mode":"ACCESS","access-vlan":1}}' >/dev/null
+request DELETE "$VLANS/vlan=20" >/dev/null
+
+# Spanning tree
+status=$(stp_patch '{"global":{"config":{"enabled-protocol":["openconfig-spanning-tree-types:RSTP"]}},
+                     "rstp":{"config":{"bridge-priority":8192,"hold-count":4}},
+                     "interfaces":{"interface":[{"name":"lan2","config":{"name":"lan2","edge-port":"openconfig-spanning-tree-types:EDGE_ENABLE"}}]}}')
+check "RSTP for the MIBs" 204 "$status"
+check "dot1dStpPriority" 8192 "$(snmp get 1.3.6.1.2.1.17.2.2.0)"
+check "dot1dStpBridgeMaxAge" 2000 "$(snmp get 1.3.6.1.2.1.17.2.12.0)"
+check "dot1dStpRootPort: root bridge" 0 "$(snmp get 1.3.6.1.2.1.17.2.7.0)"
+check "dot1dStpPortEnable of port 1" 1 "$(snmp get 1.3.6.1.2.1.17.2.15.1.4.1)"
+check "dot1dStpPortState of port 1 is mstpd's" true "$(snmp get 1.3.6.1.2.1.17.2.15.1.3.1 | grep -qE '^[1-5]$' && echo true)"
+check "dot1dStpVersion rstp" 2 "$(snmp get 1.3.6.1.2.1.17.2.16.0)"
+check "dot1dStpTxHoldCount" 4 "$(snmp get 1.3.6.1.2.1.17.2.17.0)"
+check "dot1dStpPortAdminEdgePort of lan2" 1 "$(snmp get 1.3.6.1.2.1.17.2.19.1.2.2)"
+request DELETE "$STP" >/dev/null
+check "spanning tree off: no dot1dStp" true "$(snmp get 1.3.6.1.2.1.17.2.2.0 | grep -q 'No Such' && echo true)"
+
+# Changes restart snmpd; a backend restart stops the old one's.
+old_pid=$(pgrep -x snmpd)
+request PATCH "$RC/data/clixon-switch:system/config" '{"clixon-switch:config":{"location":"rack 4"}}' >/dev/null
+check "sysLocation change restarts snmpd" true "$([ "$(pgrep -x snmpd)" != "$old_pid" ] && echo true || echo false)"
+check "sysLocation after the change" '"rack 4"' "$(snmp get -Oa 1.3.6.1.2.1.1.6.0)"
+# snmpd saves its users in its persistent file; a user taken out of the
+# configuration must not come back from there.
+status=$(request PUT "$SNMP" "$(snmp_config "$ENGINE" "$ACCESS" monitor)")
+check "user renamed" 204 "$status"
+check "the new user reads" '"rack 4"' "$(SNMP_USER=monitor snmp get -Oa 1.3.6.1.2.1.1.6.0)"
+check "the old user is gone" true "$(snmp get 1.3.6.1.2.1.1.6.0 | grep -q 'Unknown user name' && echo true)"
+restart_backend
+check "restart: orphaned snmpd stopped" 0 "$(snmpd_count)"
+check "restart: orphaned clixon_snmp stopped" 0 "$(subagent_count)"
+status=$(request PUT "$SNMP" "$(snmp_config "$(echo "$ENGINE" | jq -c 'del(.["engine-id"])')" "$ACCESS")")
+check "SNMP without engine-id" 201 "$status"
+bridge_mac=$(cat /sys/class/net/br-lan/address)
+request GET "$SNMP/engine" >/dev/null
+check "state: engine ID from the bridge MAC" "80:00:1f:88:03:$bridge_mac" "$(jq -r '.["ietf-snmp:engine"]["clixon-switch:engine-id-in-use"]' /tmp/body)"
+status=$(request DELETE "$SNMP")
+check "delete /snmp" 204 "$status"
+check "no snmpd" 0 "$(snmpd_count)"
+check "no clixon_snmp" 0 "$(subagent_count)"
+request DELETE "$RC/data/clixon-switch:system/config" >/dev/null
+
 echo "# invalid configuration is rejected and not applied"
 rejected "unknown port" PUT "$IFACES/interface=lan9" \
     '{"openconfig-interfaces:interface":[{"name":"lan9","config":{"name":"lan9","type":"iana-if-type:ethernetCsmacd"},"openconfig-if-ethernet:ethernet":{"openconfig-vlan:switched-vlan":{"config":{"interface-mode":"ACCESS","access-vlan":1}}}}]}'

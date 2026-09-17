@@ -14,6 +14,13 @@ module clixon-switch {
   import openconfig-yang-types { prefix oc-yang; }
   import openconfig-spanning-tree { prefix oc-stp; }
   import openconfig-spanning-tree-types { prefix oc-stp-types; }
+  // SNMP: ietf-snmp configures the agent (snmpd). clixon_snmp serves the
+  // MIBs below (translated by scripts/mib-to-yang.sh, all config false)
+  // from state data; importing them makes clixon load them.
+  import ietf-snmp { prefix snmp; }
+  import BRIDGE-MIB { prefix bridge-mib; }
+  import Q-BRIDGE-MIB { prefix q-bridge; }
+  import RSTP-MIB { prefix rstp-mib; }
 
   organization "clixon-switch-rs";
   contact "https://github.com/AlbrechtL/clixon-switch-rs";
@@ -27,12 +34,23 @@ module clixon-switch {
      DOT1Q, with the VLANs declared in vlans and access or trunk ports; or
      PORT_BASED, with ports in disjoint port-based-vlans groups and no tags.
 
+     SNMP: an SNMPv3 agent, read-only, configured in /snmp of ietf-snmp
+     (engine, USM users, VACM). It serves SNMPv2-MIB's system group and
+     IF-MIB, and BRIDGE-MIB, Q-BRIDGE-MIB and RSTP-MIB from the state of
+     the switch. /system/config holds sysContact and sysLocation.
+
      The backend implements only part of these modules. It rejects any other
      configuration when validating a commit (see switch-model's supported.rs).
      There are no deviation statements: clixon 7.8 does not reject data for
      nodes marked 'deviate not-supported', it only skips their must
      checks.";
 
+  revision 2026-09-17 {
+    description
+      "SNMPv3 agent, read-only: /snmp of ietf-snmp, the engine ID in use,
+       and BRIDGE-MIB, Q-BRIDGE-MIB and RSTP-MIB as state data.
+       System contact and location.";
+  }
   revision 2026-09-16 {
     description
       "VLAN database, trunk ports, VLAN mode and port-based VLAN groups.
@@ -79,13 +97,36 @@ module clixon-switch {
     }
   }
 
+  grouping system-config {
+    leaf contact {
+      type string {
+        length "0..255";
+      }
+      description
+        "Who is responsible for the switch, and how to reach them: SNMP's
+         sysContact. One line.";
+    }
+    leaf location {
+      type string {
+        length "0..255";
+      }
+      description "Where the switch is: SNMP's sysLocation. One line.";
+    }
+  }
+
   // ietf-system and openconfig-system are too big for what the switch
   // reports, and mostly configuration it does not implement.
   container system {
     description "The switch as a whole.";
+    container config {
+      uses system-config;
+    }
     container state {
       config false;
-      description "Read from /proc and os-release on every request.";
+      description
+        "The configuration in effect, and what is read from /proc and
+         os-release on every request.";
+      uses system-config;
       leaf hostname {
         type string;
         description "Kernel host name.";
@@ -266,5 +307,20 @@ module clixon-switch {
   augment "/oc-stp:stp/oc-stp:mstp" {
     description "Port settings and state of the CIST.";
     uses oc-stp:stp-interfaces-top;
+  }
+
+  // SNMP. snmpd needs an engine ID for USM: RFC 7407 leaves engine-id
+  // optional, and USM keys are localized with the engine ID.
+  augment "/snmp:snmp/snmp:engine" {
+    description "State of the SNMP engine.";
+    leaf engine-id-in-use {
+      config false;
+      type snmp:engine-id;
+      description
+        "The engine ID snmpd runs with: engine-id, or else one derived from
+         the bridge's MAC address (RFC 3411 format 3 with Net-SNMP's
+         enterprise number 8072). The USM keys of the users have to be
+         localized with it.";
+    }
   }
 }

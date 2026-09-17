@@ -1,7 +1,8 @@
 #!/bin/sh
 # Inside the dev container: builds and installs the plugin, creates the
 # switch ports, starts a DHCP server behind lan8, clixon_backend and
-# clixon_restconf, then runs the given command (default: a shell).
+# clixon_restconf, then runs the given command (default: a shell). The
+# plugin starts snmpd and clixon_snmp once /snmp enables SNMP.
 
 set -eu
 
@@ -44,6 +45,8 @@ export CLIXON_SWITCH_PORTS="$PORTS"
 export CLIXON_SWITCH_STP_IN_NETNS=1
 # Docker manages /etc/resolv.conf.
 export RESOLV_CONF=/tmp/resolv.conf
+# snmpd's engineBoots, on flash on the switch.
+export CLIXON_SWITCH_SNMP_PERSISTENT_DIR=/usr/local/var/lib/net-snmp
 
 /usr/local/lib/clixon-switch/prepare-datastore "$XMLDB" "$PERSISTENT" \
     /usr/local/share/clixon-switch/factory-default.xml

@@ -8,7 +8,9 @@ A [clixon](https://www.clicon.org/) backend plugin, written in Rust, that
 applies an OpenConfig switch configuration to the Linux kernel: DSA switch
 ports in one VLAN-aware bridge, as 802.1Q access and trunk ports or in
 port-based VLAN groups, routed VLAN interfaces with static IPv4
-addresses or a DHCP client, and spanning tree (STP, RSTP, MSTP) with mstpd.
+addresses or a DHCP client, spanning tree (STP, RSTP, MSTP) with mstpd, and
+a read-only SNMPv3 agent (net-snmp's snmpd with clixon_snmp) for the system
+group, IF-MIB, BRIDGE-MIB, Q-BRIDGE-MIB and RSTP-MIB.
 
 clixon provides the datastores, the CLI, NETCONF and RESTCONF. This plugin
 validates each commit and reconciles the kernel over netlink. It was written
@@ -24,7 +26,9 @@ but nothing in it is specific to that board.
 | `openconfig-vlan` | switch ports: `ethernet/switched-vlan/config/{interface-mode,access-vlan,native-vlan,trunk-vlans}`; routed VLANs: `routed-vlan/config/vlan` (id or name) |
 | `openconfig-if-ip` | `routed-vlan/ipv4/addresses/address[ip]/config/prefix-length`; `routed-vlan/ipv4/config/dhcp-client` |
 | `openconfig-spanning-tree` | `stp/global/config/{enabled-protocol,bpdu-guard,bpdu-filter}`; `stp/rstp/config/{hello-time,max-age,forwarding-delay,hold-count,bridge-priority}` and `stp/rstp/interfaces`; `stp/mstp/config/{name,revision,max-hop,...timers}`, `stp/mstp/mst-instances/mst-instance[mst-id]/config/{vlan,bridge-priority}` and its `interfaces`; `stp/interfaces/interface[name]/config/{edge-port,link-type,guard,bpdu-guard,bpdu-filter}` |
-| `clixon-switch` | `vlans/vlan[vlan-id]/config/{name,status}` (the `vlan-top` grouping of `openconfig-vlan`); `switch/config/vlan-mode`; `port-based-vlans/group[id]/config/{name,port}`; identity `STP`; the MSTP CIST: `stp/mstp/config/bridge-priority`, `stp/mstp/interfaces`; state only: `routed-vlan/ipv4/state/dhcp-lease`, `stp/mstp/state` of the CIST |
+| `ietf-snmp` | `snmp/engine/{enabled,listen,version/v3,engine-id}`; `snmp/usm/local/user[name]/{auth/sha,priv/aes}/key`; `snmp/vacm/group[name]/{member,access}`, `snmp/vacm/view[name]/{include,exclude}` |
+| `clixon-switch` | `vlans/vlan[vlan-id]/config/{name,status}` (the `vlan-top` grouping of `openconfig-vlan`); `switch/config/vlan-mode`; `port-based-vlans/group[id]/config/{name,port}`; `system/config/{contact,location}`; identity `STP`; the MSTP CIST: `stp/mstp/config/bridge-priority`, `stp/mstp/interfaces`; state only: `routed-vlan/ipv4/state/dhcp-lease`, `stp/mstp/state` of the CIST, `snmp/engine/engine-id-in-use` |
+| `BRIDGE-MIB`, `Q-BRIDGE-MIB`, `RSTP-MIB` | state only, for SNMP (see below) |
 
 The switch runs in one of two VLAN modes, `switch/config/vlan-mode`:
 
@@ -69,9 +73,11 @@ instead of storing it silently. Leaves it does not implement are accepted only
 with their YANG default, which clixon fills into every tree
 (`crates/switch-model/src/supported.rs`). `deviate not-supported` would be
 the YANG way, but clixon 7.8 still accepts data for such nodes and only skips
-their `must` checks. The OpenConfig modules in
-`yang/vendor` are the import closure copied from openconfig/public by
-`scripts/vendor-yang.sh`. `openconfig-if-ip` has to stay at 3.7.0 or older,
+their `must` checks. The modules in `yang/vendor` are the import closure
+copied from openconfig/public and, for `ietf-snmp` and `ietf-yang-smiv2`,
+from YangModels/yang by `scripts/vendor-yang.sh`. `yang/mib` holds the MIBs
+translated to YANG by `scripts/mib-to-yang.sh` (run it before
+`vendor-yang.sh`). `openconfig-if-ip` has to stay at 3.7.0 or older,
 because later versions import `openconfig-network-instance` and with it
 BGP, IS-IS, MPLS and more. That is also why the VLAN database lives in
 `clixon-switch`: in OpenConfig, only `openconfig-network-instance` uses the
@@ -97,6 +103,7 @@ entry's state recreates it without its `config`.
 | (always) | `br-lan` with `mst_enabled 1`: per-VLAN spanning tree states |
 | `stp/global/config/enabled-protocol` set | `mstpd` a child of `clixon_backend`, `br-lan` `stp_state` 1 before ports join, mstpd configured with `mstpctl` |
 | MSTI with `vlan` | `bridge vlan global set vid V msti M`, and the ports' MSTI states, programmed by the patched mstpd |
+| `snmp/engine/enabled true` | `snmpd` and `clixon_snmp`, children of `clixon_backend`; `snmpd.conf` in `CLICON_XMLDB_DIR` |
 
 A port's new PVID entry is added before its other entries change, so the port
 never drops untagged frames while its native VLAN moves. The rtl83xx DSA
@@ -206,10 +213,109 @@ Switch ports are the DSA user ports. `CLIXON_SWITCH_PORTS="lan1 lan2"` in the
 environment of `clixon_backend` names other links instead, e.g. dummy links
 in a test container.
 
+### SNMP
+
+SNMP is off in the factory default. When enabled, it is SNMPv3 only and
+read-only: the configuration (the datastore) stays the only source of truth,
+and SNMP only shows it and the state of the switch.
+
+Two daemons serve it, both started by the plugin while
+`snmp/engine/enabled` is true:
+- **`snmpd`** (net-snmp) owns UDP port 161: SNMPv3 security (USM) and access
+  control (VACM). It answers SNMPv2-MIB's system group and IF-MIB (ports,
+  counters) itself, from the kernel.
+- **`clixon_snmp`** is its AgentX subagent for BRIDGE-MIB, Q-BRIDGE-MIB and
+  RSTP-MIB. It asks `clixon_backend` like any other clixon client. The plugin
+  answers from the running configuration, the kernel (bridge VLANs,
+  forwarding database) and mstpd.
+
+```
+manager --UDP 161, SNMPv3--> snmpd -- system group, IF-MIB
+                               |
+                               +--AgentX socket--> clixon_snmp --> clixon_backend + plugin:
+                                                   1.3.6.1.2.1.17  BRIDGE-MIB, Q-BRIDGE-MIB, RSTP-MIB
+```
+
+The MIB modules are translations to YANG (RFC 6643, `yang/mib`), in which
+every object is `config false`, so SNMP cannot change anything. snmpd's
+configuration grants no write views either. `scripts/mib-to-yang.sh` makes
+them with libsmi's smidump from the MIBs of libsmi 0.5.0, with two fixes to
+smidump's output (in its comments): Q-BRIDGE-MIB would pull in RMON2-MIB and
+some 16000 lines of YANG for one type, and RSTP-MIB repeats BRIDGE-MIB's
+spanning tree scalars.
+
+The configuration is `/snmp` of `ietf-snmp` (RFC 7407). The plugin
+accepts:
+- `engine`: `enabled`, `listen` entries with `udp` on IPv4 addresses,
+  `version/v3` (required, the only one), `engine-id` (optional).
+- `usm/local/user`: `auth/sha` (required) and `priv/aes` (optional), with
+  localized keys (20 and 16 octets).
+- `vacm/group`: `member`s (security model `usm`) and `access` with context
+  `""`, security model `usm` or `any`, security level `auth-no-priv` or
+  `auth-priv`, and a `read-view`.
+- `vacm/view`: `include` and `exclude` with numeric OIDs.
+
+It rejects SNMPv1/v2c and communities, notifications (`target`,
+`target-params`, `notify-filter-profile`), proxies, TLS/SSH, remote users,
+MD5 and DES, `no-auth-no-priv`, contexts, `write-view` and `notify-view`,
+and OID wildcards. `system/config/{contact,location}` in `clixon-switch` are
+sysContact and sysLocation; sysName is the host name.
+
+USM keys in `ietf-snmp` are localized keys: derived from a passphrase and
+the engine ID (RFC 3414 A.2). Without `engine-id`, the engine ID is derived
+from `br-lan`'s MAC address (RFC 3411 format 3 with Net-SNMP's enterprise
+number); `snmp/engine/clixon-switch:engine-id-in-use` shows it. So pick the
+engine ID first, then make the keys on your own computer, so the passphrases
+never go to the switch:
+
+```sh
+scripts/snmp-localize-key --engine-id 80:00:1f:88:04:73:77:31 \
+    --auth 'auth passphrase' --priv 'priv passphrase'
+curl -X PUT -H 'Content-Type: application/yang-data+json' -d '{"ietf-snmp:snmp": {
+    "engine": {"enabled": true, "engine-id": "80:00:1f:88:04:73:77:31",
+               "version": {"v3": [null]},
+               "listen": [{"name": "all", "udp": {"ip": "0.0.0.0"}}]},
+    "usm": {"local": {"user": [{"name": "nms",
+        "auth": {"sha": {"key": "<auth sha key>"}}, "priv": {"aes": {"key": "<priv aes key>"}}}]}},
+    "vacm": {"group": [{"name": "readers",
+                        "member": [{"security-name": "nms", "security-model": ["usm"]}],
+                        "access": [{"context": "", "security-model": "usm",
+                                    "security-level": "auth-priv", "read-view": "all"}]}],
+             "view": [{"name": "all", "include": ["1.3.6.1"]}]}}}' \
+  http://192.168.1.1/restconf/data/ietf-snmp:snmp
+snmpwalk -v3 -l authPriv -u nms -a SHA -A 'auth passphrase' -x AES -X 'priv passphrase' \
+  192.168.1.1 1.3.6.1.2.1.17
+```
+
+What the bridge MIBs show:
+- **BRIDGE-MIB**: the bridge address and ports (`dot1dBasePort` numbers
+  ports by the number in their names, `lan1` is 1; `dot1dBasePortIfIndex` is
+  IF-MIB's ifIndex), the forwarding database, and while spanning tree runs,
+  `dot1dStp` and the port table of the CIST.
+- **RSTP-MIB**: the protocol version and hold count, and per port edge and
+  point-to-point, while spanning tree runs. MSTP shows as `rstp`; the MSTIs
+  have no MIB here (IEEE8021-MSTP-MIB is not in libsmi).
+- **Q-BRIDGE-MIB**: the VLANs as configured (`dot1qVlanStaticTable`, in
+  port-based mode the groups) and as in the kernel (`dot1qVlanCurrentTable`),
+  PVIDs and acceptable frame types, and the forwarding database per VLAN.
+
+A commit that changes what `snmpd.conf` would say restarts both daemons.
+snmpd keeps `engineBoots` in its persistent directory (`/var/lib/net-snmp`,
+`CLIXON_SWITCH_SNMP_PERSISTENT_DIR`), where it also saves its users. The
+plugin removes those before every start, so a user taken out of the
+configuration cannot come back. `snmpd.conf` holds the keys and is readable
+by root only. A backend that starts stops any snmpd and clixon_snmp a
+previous one left behind.
+
+clixon 7.8's `clixon_snmp` needed fixes for these MIBs: binary and
+mac-address types, tables with augments, index leaves of other tables, and
+SMI defaults in state data. meta-ethernet-switch-os carries them as patches
+(`recipes-clixon/clixon/files`), and the dev container applies them.
+
 ### System state and status page
 
-`/system/state` (`clixon-switch`) is state data independent of the
-configuration: host name, the firmware's `NAME` and `VERSION` from
+`/system/state` (`clixon-switch`) is state data: the contact and location
+of `/system/config`, host name, the firmware's `NAME` and `VERSION` from
 `/etc/os-release`, kernel release, clock, uptime, load averages and memory.
 
 `clixon_restconf` serves `www/` at `/` (clixon's `http-data`, see
@@ -244,15 +350,16 @@ default.
 
 | Path | Content |
 |---|---|
-| `crates/switch-model` | RFC 7951 JSON → validated `DesiredState`; state data XML. Pure, host-tested. |
-| `crates/switch-net` | `ActualState`, the planner, `reconcile`, the netlink backend and a kernel-like fake for tests; the DHCP client and mstpd |
+| `crates/switch-model` | RFC 7951 JSON → validated `DesiredState`; state data XML, also of the bridge MIBs; `snmpd.conf`. Pure, host-tested. |
+| `crates/switch-net` | `ActualState`, the planner, `reconcile`, the netlink backend (also the bridge FDB) and a kernel-like fake for tests; the child processes: DHCP client, mstpd, snmpd and clixon_snmp |
 | `crates/clixon-sys` | hand-written declarations for the libclixon 7.8 subset in use |
 | `crates/clixon-plugin` | safe plugin interface: callbacks, panics caught, logging, transactions |
 | `crates/clixon-switch-plugin` | the cdylib clixon loads |
 | `clixon/` | `clixon.xml` template, `autocli.xml`, CLI spec |
 | `www/` | the status page (plain HTML, CSS, JavaScript), served by `clixon_restconf` |
-| `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, `/sbin/bridge-stp`, YANG vendoring |
-| `dev/` | development container with clixon at the Yocto recipes' revisions, and mstpd with the layer's patches |
+| `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, `/sbin/bridge-stp`, YANG vendoring, MIB translation, `snmp-localize-key` |
+| `yang/` | the main module; `vendor/` imported modules; `mib/` MIBs translated to YANG |
+| `dev/` | development container with clixon and mstpd at the Yocto recipes' revisions and with the layer's patches, net-snmp, smidump |
 | `tests/integration/` | RESTCONF tests against clixon in the container |
 
 ## Development
@@ -266,9 +373,9 @@ default.
 
 2. **Integration tests, in a container.** The container runs clixon with the
    plugin on dummy links `lan1`..`lan7` and a veth `lan8` with a busybox
-   DHCP server at its other end, in its own network namespace, and mstpd with
-   the layer's patches. The tests drive RESTCONF and check the kernel with
-   `ip` and `bridge`.
+   DHCP server at its other end, in its own network namespace, mstpd, and
+   snmpd. The tests drive RESTCONF and check the kernel with `ip` and
+   `bridge`, and SNMP with net-snmp's `snmpget` and `snmpwalk`.
 
    Spanning tree cannot converge there: the kernel only hands spanning tree
    to userspace for bridges in the host's network namespace, and a bridge
@@ -283,6 +390,10 @@ default.
    dev/container.sh tests/integration/run.sh
    dev/container.sh            # shell: clixon_cli -f /usr/local/etc/clixon.xml, curl localhost:8080
    ```
+
+   The image takes the clixon and mstpd patches from meta-ethernet-switch-os
+   on GitHub (`LAYER_REV`, default master), or from a local checkout:
+   `LAYER=~/src/.../meta-ethernet-switch-os dev/container.sh ...`.
 
 3. **On the switch.** Build with Yocto from a local checkout, then run the
    plugin from RAM without flashing:
@@ -299,4 +410,5 @@ default.
 ## License
 
 Apache-2.0. The vendored OpenConfig modules are Apache-2.0 as well; the IETF
-and IANA modules are BSD-2-Clause (see their headers).
+and IANA modules are BSD-2-Clause (see their headers). The MIB translations in
+`yang/mib` are derived from the IETF MIBs' RFCs (see their descriptions).

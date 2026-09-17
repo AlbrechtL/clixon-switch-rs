@@ -47,6 +47,7 @@ fn applied() -> DesiredState {
             },
         )]),
         stp: None,
+        ..DesiredState::default()
     }
 }
 

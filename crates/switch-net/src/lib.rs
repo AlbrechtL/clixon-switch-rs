@@ -11,6 +11,8 @@ pub mod dhcp;
 pub mod fake;
 pub mod netlink;
 mod plan;
+pub mod process;
+pub mod snmp;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

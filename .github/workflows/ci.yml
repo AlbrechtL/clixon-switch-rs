@@ -23,14 +23,32 @@ jobs:
       - name: Unit tests
         run: cargo test
 
-      # The vendored modules must be exactly the import closure of yang/, at
-      # the pinned openconfig/public release.
+      # The vendored modules must be exactly the import closure of yang/ and
+      # yang/mib, at the pinned openconfig/public release and YangModels/yang
+      # commit (see scripts/vendor-yang.sh).
       - name: Vendored YANG is up to date
         run: |
           git clone --quiet --filter=blob:none --branch v5.3.0 \
               https://github.com/openconfig/public.git /tmp/openconfig-public
-          scripts/vendor-yang.sh /tmp/openconfig-public
+          git clone --quiet --filter=blob:none --no-checkout \
+              https://github.com/YangModels/yang.git /tmp/yangmodels
+          git -C /tmp/yangmodels sparse-checkout set standard/ietf/RFC
+          git -C /tmp/yangmodels checkout --quiet \
+              "$(sed -n 's/^YANGMODELS_COMMIT=//p' scripts/vendor-yang.sh)"
+          scripts/vendor-yang.sh /tmp/openconfig-public /tmp/yangmodels
           git diff --exit-code yang/vendor
+
+      # The MIB translations must be what smidump makes of the pinned MIBs.
+      # smidump is in the dev container, which mounts the repository
+      # read-only: translate into a copy.
+      - name: MIB YANG is up to date
+        run: |
+          cp -r . /tmp/mib-check
+          docker build -q -t clixon-switch-dev \
+              --build-context layer=https://github.com/AlbrechtL/meta-ethernet-switch-os.git#master dev
+          docker run --rm -u "$(id -u):$(id -g)" -v /tmp/mib-check:/src -w /src \
+              clixon-switch-dev scripts/mib-to-yang.sh
+          diff -r yang/mib /tmp/mib-check/yang/mib
 
       # Builds clixon at the revisions the Yocto recipes pin, runs it with the
       # plugin against dummy ports, and drives it over RESTCONF.

@@ -4,8 +4,9 @@
 //! Every commit, revert and the startup commit reconcile the kernel with the
 //! whole configuration (see `switch_net::reconcile`), rather than applying
 //! the difference between two datastore trees. Around that, they start or
-//! stop mstpd and configure it (see `switch_net::stp`), and the DHCP client
-//! (see `switch_net::dhcp`).
+//! stop mstpd and configure it (see `switch_net::stp`), the DHCP client
+//! (see `switch_net::dhcp`), and snmpd with clixon_snmp (see
+//! `switch_net::snmp`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -15,11 +16,13 @@ use clixon_plugin::{
     export_backend_plugin, BackendPlugin, Error, Handle, Level, Result, StateTree, Transaction,
 };
 use switch_model::{
-    parse_loadavg, parse_meminfo, parse_os_release, parse_uptime, state_xml, system_state_xml,
-    validate, AddressOrigin, DesiredState, InterfaceState, SystemState,
+    bridge_mib_xml, default_engine_id, parse_loadavg, parse_mac, parse_meminfo, parse_os_release,
+    parse_uptime, snmp_state_xml, snmpd_conf, state_xml, system_state_xml, validate, AddressOrigin,
+    BridgeInfo, DesiredState, InterfaceState, MibModules, PortVlans, SnmpdParams, SystemState,
 };
 use switch_net::dhcp::{self, ChildProcesses, DhcpClients, DhcpConfig, Event};
 use switch_net::netlink::NetlinkBackend;
+use switch_net::snmp::{self as snmp, SnmpConfig, Snmpd};
 use switch_net::stp::{self, CommandControl, Mstpd, MstpdConfig};
 use switch_net::{reconcile, NetBackend, Op, BRIDGE_NAME};
 
@@ -44,10 +47,22 @@ const STP_IN_NETNS_ENV: &str = "CLIXON_SWITCH_STP_IN_NETNS";
 const MSTPD_ENV: &str = "CLIXON_SWITCH_MSTPD";
 const MSTPCTL_ENV: &str = "CLIXON_SWITCH_MSTPCTL";
 
+/// The snmpd and clixon_snmp binaries, instead of those in PATH.
+const SNMPD_ENV: &str = "CLIXON_SWITCH_SNMPD";
+const CLIXON_SNMP_ENV: &str = "CLIXON_SWITCH_CLIXON_SNMP";
+
+/// snmpd's persistent directory, instead of [`SNMP_PERSISTENT_DIR`].
+const SNMP_PERSISTENT_ENV: &str = "CLIXON_SWITCH_SNMP_PERSISTENT_DIR";
+/// On flash: snmpd counts its boots there, as SNMPv3 requires.
+const SNMP_PERSISTENT_DIR: &str = "/var/lib/net-snmp";
+
 struct SwitchPlugin {
     net: NetlinkBackend,
     mstpd: Mstpd<ChildProcesses, CommandControl>,
     dhcp: DhcpClients<ChildProcesses>,
+    snmp: Snmpd<ChildProcesses>,
+    /// The engine ID snmpd runs with.
+    engine_id: Option<Vec<u8>>,
     /// The configuration last applied, for state data.
     applied: DesiredState,
 }
@@ -72,6 +87,49 @@ fn dhcp_config(h: Handle) -> Result<DhcpConfig> {
         resolv_conf: std::env::var_os(RESOLV_CONF_ENV)
             .map_or("/etc/resolv.conf".into(), PathBuf::from),
     })
+}
+
+/// Where snmpd's and clixon_snmp's files are: snmpd.conf with the
+/// datastores on tmpfs, the AgentX socket as clixon.xml says.
+fn snmp_config(h: Handle) -> Result<SnmpConfig> {
+    let option = |name: &str| {
+        h.option(name)
+            .ok_or_else(|| Error::msg(format!("clixon option {name} is not set")))
+    };
+    let binary = |env: &str, default: &str| {
+        std::env::var_os(env).map_or(PathBuf::from(default), PathBuf::from)
+    };
+    let socket = option("CLICON_SNMP_AGENT_SOCK")?;
+    let socket = socket.strip_prefix("unix:").ok_or_else(|| {
+        Error::msg(format!(
+            "CLICON_SNMP_AGENT_SOCK {socket} is not a unix socket"
+        ))
+    })?;
+    Ok(SnmpConfig {
+        snmpd: binary(SNMPD_ENV, "snmpd"),
+        clixon_snmp: binary(CLIXON_SNMP_ENV, "clixon_snmp"),
+        clixon_config: option("CLICON_CONFIGFILE")?.into(),
+        conf_file: PathBuf::from(option("CLICON_XMLDB_DIR")?).join("snmpd.conf"),
+        persistent_dir: binary(SNMP_PERSISTENT_ENV, SNMP_PERSISTENT_DIR),
+        agentx_socket: socket.into(),
+    })
+}
+
+fn log_snmp_events(h: Handle, events: Vec<snmp::Event>) {
+    for event in events {
+        let (level, message) = match event {
+            snmp::Event::Started { name, pid } => {
+                (Level::Info, format!("{name} started (pid {pid})"))
+            }
+            snmp::Event::Stopped { name, pid } => {
+                (Level::Info, format!("{name} stopped (pid {pid})"))
+            }
+            snmp::Event::Exited { name, pid } => {
+                (Level::Warning, format!("{name} (pid {pid}) had exited"))
+            }
+        };
+        h.log(level, &message);
+    }
 }
 
 fn log_stp_event(h: Handle, event: stp::Event) {
@@ -135,6 +193,8 @@ impl SwitchPlugin {
             net,
             mstpd: Mstpd::new(mstpd_config, ChildProcesses::default(), CommandControl),
             dhcp: DhcpClients::new(dhcp_config(h)?, ChildProcesses::default()),
+            snmp: Snmpd::new(snmp_config(h)?, ChildProcesses::default()),
+            engine_id: None,
             applied: DesiredState::default(),
         })
     }
@@ -188,8 +248,120 @@ impl SwitchPlugin {
             .sync(wanted, relinked, hostname.as_deref().map(str::trim))
             .map_err(|e| Error::msg(format!("cannot start the DHCP client: {e}")))?;
         log_dhcp_events(h, events);
+        self.sync_snmp(h, &desired)?;
         self.applied = desired;
         Ok(())
+    }
+
+    /// Runs snmpd with the configuration of `desired`, or stops it. The
+    /// default engine ID comes from the bridge's MAC address, so this runs
+    /// after the kernel is reconciled.
+    fn sync_snmp(&mut self, h: Handle, desired: &DesiredState) -> Result<()> {
+        let conf = match &desired.snmp {
+            None => {
+                self.engine_id = None;
+                None
+            }
+            Some(snmp) => {
+                let engine_id = match &snmp.engine_id {
+                    Some(id) => id.clone(),
+                    None => {
+                        let mac = self
+                            .net
+                            .interface_states()?
+                            .remove(BRIDGE_NAME)
+                            .and_then(|s| s.mac)
+                            .and_then(|m| parse_mac(&m))
+                            .ok_or_else(|| {
+                                Error::msg(format!(
+                                    "snmp: {BRIDGE_NAME} has no MAC address for the engine ID; configure engine-id"
+                                ))
+                            })?;
+                        default_engine_id(mac)
+                    }
+                };
+                let system = system_state();
+                let description = match (&system.os_name, &system.os_version) {
+                    (Some(name), Some(version)) => Some(format!("{name} {version}")),
+                    (Some(name), None) => Some(name.clone()),
+                    _ => None,
+                };
+                let socket = self
+                    .snmp
+                    .config()
+                    .agentx_socket
+                    .to_string_lossy()
+                    .into_owned();
+                let conf = snmpd_conf(
+                    snmp,
+                    &SnmpdParams {
+                        engine_id: &engine_id,
+                        agentx_socket: &socket,
+                        system: &desired.system,
+                        description: description.as_deref(),
+                    },
+                );
+                self.engine_id = Some(engine_id);
+                Some(conf)
+            }
+        };
+        let result = self.snmp.sync(conf.as_deref());
+        let events = match result {
+            Ok(events) => events,
+            Err(e) => {
+                self.engine_id = None;
+                return Err(e.into());
+            }
+        };
+        log_snmp_events(h, events);
+        Ok(())
+    }
+
+    /// BRIDGE-MIB, Q-BRIDGE-MIB and RSTP-MIB, for clixon_snmp. Only what
+    /// `xpath` may ask for is read: the forwarding database for FDB tables,
+    /// mstpd for spanning tree.
+    fn mib_state(
+        &mut self,
+        xpath: &str,
+        modules: MibModules,
+        states: &BTreeMap<String, InterfaceState>,
+    ) -> Result<String> {
+        let actual = self.net.observe()?;
+        let port_vlans: BTreeMap<String, PortVlans> = actual
+            .bridge_vlans
+            .iter()
+            .filter(|(name, _)| self.applied.ports.contains_key(*name))
+            .map(|(name, vlans)| {
+                let pvid = vlans.iter().find(|(_, f)| f.pvid).map(|(vid, _)| *vid);
+                let vlans = vlans.iter().map(|(vid, f)| (*vid, f.untagged)).collect();
+                (name.clone(), PortVlans { pvid, vlans })
+            })
+            .collect();
+        let ifindex: BTreeMap<String, u32> = states
+            .iter()
+            .filter_map(|(name, s)| Some((name.clone(), s.ifindex?)))
+            .collect();
+        let fdb = match xpath.contains("Fdb") {
+            true => Some(self.net.fdb(BRIDGE_NAME)?),
+            false => None,
+        };
+        let wants_stp = modules.rstp || xpath.contains("Stp");
+        let stp_state = match (&self.applied.stp, wants_stp && self.mstpd.running()) {
+            (Some(stp), true) => Some(self.mstpd.state(stp, BRIDGE_NAME)),
+            _ => None,
+        };
+        let info = BridgeInfo {
+            applied: &self.applied,
+            bridge_mac: states
+                .get(BRIDGE_NAME)
+                .and_then(|s| s.mac.as_deref())
+                .and_then(parse_mac),
+            ifindex: &ifindex,
+            port_vlans: &port_vlans,
+            fdb: fdb.as_deref(),
+            stp: stp_state.as_ref(),
+        };
+        Ok(bridge_mib_xml(&info, modules))
     }
 
     /// Kernel state of every link, with the IPv4 addresses and the DHCP
@@ -235,6 +407,8 @@ fn system_state() -> SystemState {
         .map(|text| parse_meminfo(&text))
         .unwrap_or_default();
     SystemState {
+        contact: None,
+        location: None,
         hostname: read("/proc/sys/kernel/hostname").map(|h| h.trim().to_string()),
         os_name,
         os_version,
@@ -272,6 +446,12 @@ impl BackendPlugin for SwitchPlugin {
                 &format!("stopped mstpd pid {pid} of an earlier backend"),
             );
         }
+        for (name, pid) in self.snmp.stop_orphans() {
+            h.log(
+                Level::Info,
+                &format!("stopped {name} pid {pid} of an earlier backend"),
+            );
+        }
         let ports = actual.switch_ports();
         if ports.is_empty() {
             h.log(
@@ -304,8 +484,23 @@ impl BackendPlugin for SwitchPlugin {
     }
 
     fn statedata(&mut self, _h: Handle, xpath: Option<&str>, state: &mut StateTree) -> Result<()> {
+        let modules = MibModules::from_xpath(xpath);
+        if modules.any() {
+            if self.applied == DesiredState::default() {
+                return Ok(());
+            }
+            let states = self.net.interface_states()?;
+            let xml = self.mib_state(xpath.unwrap_or_default(), modules, &states)?;
+            return state.add_xml(&xml);
+        }
         // Independent of the configuration, so also before the first commit.
-        state.add_xml(&system_state_xml(&system_state()))?;
+        let mut system = system_state();
+        system.contact = self.applied.system.contact.clone();
+        system.location = self.applied.system.location.clone();
+        state.add_xml(&system_state_xml(&system))?;
+        if let Some(engine_id) = self.engine_id.as_ref().filter(|_| self.snmp.running()) {
+            state.add_xml(&snmp_state_xml(engine_id))?;
+        }
         if self.applied == DesiredState::default() {
             return Ok(());
         }

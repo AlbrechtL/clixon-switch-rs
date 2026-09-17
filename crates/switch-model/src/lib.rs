@@ -9,6 +9,8 @@
 //! switch, that a VLAN is declared, one routed VLAN interface per VLAN, and
 //! so on.
 
+mod mib;
+mod snmp;
 mod stp;
 mod supported;
 mod system;
@@ -21,6 +23,15 @@ use std::net::Ipv4Addr;
 pub use system::{
     date_and_time, parse_loadavg, parse_meminfo, parse_os_release, parse_uptime, system_state_xml,
     SystemState,
+};
+
+pub use mib::{
+    bridge_mib_xml, port_numbers, BridgeInfo, FdbEntry, FdbStatus, MibModules, PortVlans,
+};
+pub use snmp::{
+    colon_hex, default_engine_id, parse_mac, snmp_state_xml, snmpd_conf, strip_persistent_users,
+    SecurityLevel, Snmp, SnmpAccess, SnmpGroup, SnmpView, SnmpdParams, SystemConfig, UsmUser,
+    SNMP_PORT,
 };
 
 pub use stp::{
@@ -57,6 +68,10 @@ pub struct Config {
     pub port_based_vlans: Option<PortBasedVlans>,
     #[serde(rename = "openconfig-spanning-tree:stp")]
     pub stp: Option<stp::StpConfig>,
+    #[serde(rename = "clixon-switch:system")]
+    pub system: Option<System>,
+    #[serde(rename = "ietf-snmp:snmp")]
+    pub snmp: Option<snmp::SnmpConfig>,
 }
 
 impl Config {
@@ -230,6 +245,19 @@ pub struct GroupConfig {
     pub port: Vec<String>,
 }
 
+/// `/system`.
+#[derive(Debug, Default, Deserialize)]
+pub struct System {
+    #[serde(default)]
+    pub config: SystemConfigJson,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct SystemConfigJson {
+    pub contact: Option<String>,
+    pub location: Option<String>,
+}
+
 /// A leaf that may arrive as a JSON number or a string. RFC 7951 quotes
 /// only 64-bit integers, but numeric strings are accepted as well.
 #[derive(Debug, Clone, Deserialize)]
@@ -289,6 +317,9 @@ pub struct DesiredState {
     pub svis: BTreeMap<String, Svi>,
     /// Spanning tree, while a protocol is enabled.
     pub stp: Option<Stp>,
+    /// The SNMP agent, while its engine is enabled.
+    pub snmp: Option<Snmp>,
+    pub system: SystemConfig,
 }
 
 impl DesiredState {
@@ -522,6 +553,8 @@ pub fn desired_state(
     state.vlans = domain.vlans;
     let ports = state.ports.keys().cloned().collect();
     state.stp = stp::desired_stp(config.stp.as_ref(), &ports, &mut errors);
+    state.snmp = snmp::desired_snmp(config.snmp.as_ref(), &mut errors);
+    state.system = system_config(config.system.as_ref(), &mut errors);
 
     check_unique_vlans(&state, &mut errors);
     check_unique_addresses(&state, &mut errors);
@@ -531,6 +564,19 @@ pub fn desired_state(
         Ok(state)
     } else {
         Err(Errors(errors))
+    }
+}
+
+fn system_config(system: Option<&System>, errors: &mut Vec<Error>) -> SystemConfig {
+    let config = system.map(|s| &s.config);
+    let line = |value: Option<&String>, what: &str, errors: &mut Vec<Error>| {
+        let value = value.filter(|v| !v.is_empty())?;
+        snmp::check_line(&format!("system {what}"), value, errors);
+        Some(value.clone())
+    };
+    SystemConfig {
+        contact: line(config.and_then(|c| c.contact.as_ref()), "contact", errors),
+        location: line(config.and_then(|c| c.location.as_ref()), "location", errors),
     }
 }
 
@@ -1009,6 +1055,8 @@ fn check_single_dhcp_client(state: &DesiredState, errors: &mut Vec<Error>) {
 /// Operational state of one interface, as the kernel reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InterfaceState {
+    /// Kernel ifindex, IF-MIB's ifIndex.
+    pub ifindex: Option<u32>,
     pub admin_up: bool,
     /// OpenConfig oper-status: UP, DOWN, LOWER_LAYER_DOWN, ...
     pub oper_status: &'static str,
@@ -1058,6 +1106,7 @@ pub struct DhcpLease {
 impl Default for InterfaceState {
     fn default() -> Self {
         InterfaceState {
+            ifindex: None,
             admin_up: false,
             oper_status: "UNKNOWN",
             mac: None,

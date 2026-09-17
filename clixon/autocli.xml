@@ -28,6 +28,11 @@
       <module-name>openconfig-if-ip</module-name>
     </rule>
     <rule>
+      <name>snmp</name>
+      <operation>enable</operation>
+      <module-name>ietf-snmp</module-name>
+    </rule>
+    <rule>
       <name>spanning-tree</name>
       <operation>enable</operation>
       <module-name>openconfig-spanning-tree</module-name>

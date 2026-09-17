@@ -7,13 +7,18 @@
 #   dev/container.sh <command>    runs <command> instead, e.g. tests/integration/run.sh
 #
 # The repository is mounted read-only; build output lives in a volume.
+#
+# The image applies the patches of meta-ethernet-switch-os to clixon and
+# mstpd. LAYER is the layer to take them from: a local checkout, or by
+# default the GitHub repository at LAYER_REV (default master).
 
 set -eu
 
 top=$(cd "$(dirname "$0")/.." && pwd)
 image=clixon-switch-dev
 
-docker build -q -t "$image" "$top/dev" >/dev/null
+layer=${LAYER:-https://github.com/AlbrechtL/meta-ethernet-switch-os.git#${LAYER_REV:-master}}
+docker build -q -t "$image" --build-context layer="$layer" "$top/dev" >/dev/null
 
 tty=""
 [ -t 0 ] && tty="-it"

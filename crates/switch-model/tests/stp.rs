@@ -276,6 +276,7 @@ fn state_data() {
                 root_port: Some("lan1".into()),
                 root_cost: Some(20000),
                 topology_changes: Some(2),
+                time_since_topology_change: None,
             }),
             ports: BTreeMap::from([(
                 "lan1".to_string(),

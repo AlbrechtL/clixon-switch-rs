@@ -660,6 +660,8 @@ pub struct BridgeState {
     pub root_port: Option<String>,
     pub root_cost: Option<u32>,
     pub topology_changes: Option<u64>,
+    /// Seconds.
+    pub time_since_topology_change: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -677,6 +679,10 @@ pub struct PortState {
     pub forward_transitions: Option<u64>,
     pub bpdu_sent: Option<u64>,
     pub bpdu_received: Option<u64>,
+    /// The port's path cost in use, configured or from the link speed.
+    pub path_cost: Option<u32>,
+    pub oper_edge: Option<bool>,
+    pub oper_point_to_point: Option<bool>,
 }
 
 /// State data of `/stp`: the applied configuration, and what mstpd reports

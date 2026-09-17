@@ -11,6 +11,9 @@ use crate::{escape, SWITCH_NS};
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct SystemState {
+    /// From the configuration.
+    pub contact: Option<String>,
+    pub location: Option<String>,
     pub hostname: Option<String>,
     /// NAME of os-release.
     pub os_name: Option<String>,
@@ -120,6 +123,8 @@ pub fn system_state_xml(system: &SystemState) -> String {
     }
     let text = |value: &Option<String>| value.as_deref().map(escape);
     let mut xml = format!(r#"<system xmlns="{SWITCH_NS}"><state>"#);
+    leaf(&mut xml, "contact", text(&system.contact));
+    leaf(&mut xml, "location", text(&system.location));
     leaf(&mut xml, "hostname", text(&system.hostname));
     leaf(&mut xml, "os-name", text(&system.os_name));
     leaf(&mut xml, "os-version", text(&system.os_version));

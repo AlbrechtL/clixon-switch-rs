@@ -9,23 +9,20 @@
 //! for state data.
 //!
 //! Process handling sits behind [`Processes`], so that the decisions are
-//! tested without spawning anything.
+//! tested without spawning anything. A stopped udhcpc gets
+//! [`crate::process::STOP_TIMEOUT`] to release its lease and run the script's
+//! deconfig, before it is killed.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::thread::sleep;
-use std::time::{Duration, Instant};
 
 use switch_model::{DhcpLease, Ipv4Prefix};
 
-/// How long a stopped udhcpc gets to release its lease and run the script's
-/// deconfig, before it is killed.
-const STOP_TIMEOUT: Duration = Duration::from_secs(3);
-const POLL: Duration = Duration::from_millis(20);
+use crate::process::terminate;
+pub use crate::process::{ChildProcesses, Processes};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DhcpConfig {
@@ -85,17 +82,6 @@ impl DhcpConfig {
             ),
         ]
     }
-}
-
-/// Starting and stopping processes.
-pub trait Processes {
-    /// Starts `argv` and returns its pid.
-    fn spawn(&mut self, argv: &[String], env: &[(String, String)]) -> io::Result<u32>;
-    /// Whether the process started with [`Processes::spawn`] still runs.
-    /// Reaps it if not.
-    fn running(&mut self, pid: u32) -> bool;
-    /// Stops the process: SIGTERM, then SIGKILL after [`STOP_TIMEOUT`].
-    fn stop(&mut self, pid: u32);
 }
 
 /// Something worth logging.
@@ -268,67 +254,4 @@ pub fn stop_orphans(run_dir: &Path) -> Vec<u32> {
 
 fn is_udhcpc(pid: u32) -> bool {
     fs::read_to_string(format!("/proc/{pid}/comm")).is_ok_and(|comm| comm.trim() == "udhcpc")
-}
-
-/// SIGTERM, wait for `gone`, SIGKILL after [`STOP_TIMEOUT`].
-pub(crate) fn terminate(pid: u32, mut gone: impl FnMut() -> bool) {
-    let Ok(pid_t) = libc::pid_t::try_from(pid) else {
-        return;
-    };
-    unsafe { libc::kill(pid_t, libc::SIGTERM) };
-    let deadline = Instant::now() + STOP_TIMEOUT;
-    while Instant::now() < deadline {
-        if gone() {
-            return;
-        }
-        sleep(POLL);
-    }
-    unsafe { libc::kill(pid_t, libc::SIGKILL) };
-    let deadline = Instant::now() + STOP_TIMEOUT;
-    while !gone() && Instant::now() < deadline {
-        sleep(POLL);
-    }
-}
-
-/// [`Processes`] as children of this process.
-#[derive(Default)]
-pub struct ChildProcesses {
-    children: BTreeMap<u32, Child>,
-}
-
-impl Processes for ChildProcesses {
-    fn spawn(&mut self, argv: &[String], env: &[(String, String)]) -> io::Result<u32> {
-        let (program, args) = argv
-            .split_first()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "empty command"))?;
-        let child = Command::new(program)
-            .args(args)
-            .envs(env.iter().map(|(k, v)| (k, v)))
-            .stdin(Stdio::null())
-            .spawn()?;
-        let pid = child.id();
-        self.children.insert(pid, child);
-        Ok(pid)
-    }
-
-    fn running(&mut self, pid: u32) -> bool {
-        let Some(child) = self.children.get_mut(&pid) else {
-            return false;
-        };
-        match child.try_wait() {
-            Ok(None) => true,
-            // Exited, or reaped by someone else.
-            Ok(Some(_)) | Err(_) => {
-                self.children.remove(&pid);
-                false
-            }
-        }
-    }
-
-    fn stop(&mut self, pid: u32) {
-        let Some(mut child) = self.children.remove(&pid) else {
-            return;
-        };
-        terminate(pid, || !matches!(child.try_wait(), Ok(None)));
-    }
 }

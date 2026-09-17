@@ -19,9 +19,12 @@ use netlink_packet_route::link::{
     BridgeVlanInfo, BridgeVlanInfoFlags, InfoBridge, InfoData, InfoDsa, InfoKind, InfoVlan,
     LinkAttribute, LinkExtentMask, LinkFlags, LinkInfo, LinkMessage, State,
 };
+use netlink_packet_route::neighbour::{
+    NeighbourAttribute, NeighbourFlags, NeighbourMessage, NeighbourState,
+};
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 use netlink_sys::{protocols::NETLINK_ROUTE, Socket, SocketAddr};
-use switch_model::{InterfaceState, Ipv4Prefix, BRIDGE_NAME};
+use switch_model::{FdbEntry, FdbStatus, InterfaceState, Ipv4Prefix, BRIDGE_NAME};
 
 use crate::{ActualState, BridgeStp, Error, Link, LinkKind, NetBackend, Op, Result, VlanFlags};
 
@@ -223,6 +226,7 @@ impl NetlinkBackend {
                 continue;
             };
             let mut state = InterfaceState {
+                ifindex: Some(message.header.index),
                 admin_up: message.header.flags.contains(LinkFlags::Up),
                 ..InterfaceState::default()
             };
@@ -249,6 +253,72 @@ impl NetlinkBackend {
             states.insert(name.to_string(), state);
         }
         Ok(states)
+    }
+
+    /// The forwarding database of `bridge`: the entries of the bridge itself
+    /// (learned, static, and its own addresses), not those of the port
+    /// drivers.
+    pub fn fdb(&mut self, bridge: &str) -> Result<Vec<FdbEntry>> {
+        let names: BTreeMap<u32, String> = self
+            .dump_links(AddressFamily::Unspec, vec![])?
+            .iter()
+            .filter_map(|m| Some((m.header.index, link_name(m)?.to_string())))
+            .collect();
+        let Some(bridge_index) = names
+            .iter()
+            .find_map(|(index, name)| (name == bridge).then_some(*index))
+        else {
+            return Ok(Vec::new());
+        };
+
+        let mut message = NeighbourMessage::default();
+        message.header.family = AddressFamily::Bridge;
+        let mut entries = Vec::new();
+        for reply in self.request(RouteNetlinkMessage::GetNeighbour(message), NLM_F_DUMP)? {
+            let RouteNetlinkMessage::NewNeighbour(neighbour) = reply else {
+                continue;
+            };
+            let header = &neighbour.header;
+            let mut mac = None;
+            let mut vlan = None;
+            let mut controller = None;
+            for attribute in &neighbour.attributes {
+                match attribute {
+                    NeighbourAttribute::LinkLayerAddress(a) => {
+                        mac = <[u8; 6]>::try_from(a.as_slice()).ok()
+                    }
+                    NeighbourAttribute::Vlan(v) => vlan = Some(*v),
+                    NeighbourAttribute::Controller(index) => controller = Some(*index),
+                    _ => {}
+                }
+            }
+            let on_bridge = header.ifindex == bridge_index;
+            // Not the port drivers' entries (NTF_SELF).
+            let of_bridge =
+                controller == Some(bridge_index) && !header.flags.contains(NeighbourFlags::Own);
+            let (Some(mac), true) = (mac, on_bridge || of_bridge) else {
+                continue;
+            };
+            // Multicast entries are not addresses of stations.
+            if mac[0] & 1 == 1 {
+                continue;
+            }
+            let Some(port) = names.get(&header.ifindex) else {
+                continue;
+            };
+            let status = match header.state {
+                NeighbourState::Permanent => FdbStatus::Own,
+                NeighbourState::Noarp => FdbStatus::Mgmt,
+                _ => FdbStatus::Learned,
+            };
+            entries.push(FdbEntry {
+                mac,
+                vlan,
+                port: port.clone(),
+                status,
+            });
+        }
+        Ok(entries)
     }
 }
 

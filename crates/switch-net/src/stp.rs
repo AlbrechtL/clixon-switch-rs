@@ -26,7 +26,7 @@ use switch_model::{
     vlan_ranges, BridgeId, BridgeState, EdgePort, PortState, Stp, StpState, Tree, TreeState,
 };
 
-use crate::dhcp::Processes;
+use crate::process::{self, Processes};
 use crate::{Error, Result};
 
 /// How long a started mstpd gets to open its control socket.
@@ -181,25 +181,13 @@ impl<P: Processes, C: Control> Mstpd<P, C> {
     /// process named mstpd, since only one can run), after releasing
     /// `bridge` as [`Mstpd::prepare`] does. Returns their pids.
     pub fn stop_orphans(&mut self, bridge: &str) -> Vec<u32> {
-        let Ok(entries) = std::fs::read_dir("/proc") else {
-            return Vec::new();
-        };
-        let pids: Vec<u32> = entries
-            .flatten()
-            .filter_map(|e| e.file_name().to_str()?.parse::<u32>().ok())
-            .filter(|pid| {
-                std::fs::read_to_string(format!("/proc/{pid}/comm"))
-                    .is_ok_and(|c| c.trim() == "mstpd")
-            })
-            .collect();
+        let pids = process::pids_named("mstpd");
         if !pids.is_empty() {
             let args = strings(&["delbridge", bridge]);
             let _ = self.control.run(&self.config.mstpctl_argv(&args));
         }
         for pid in &pids {
-            crate::dhcp::terminate(*pid, || {
-                !std::path::Path::new(&format!("/proc/{pid}")).exists()
-            });
+            process::terminate(*pid, || process::gone(*pid));
         }
         pids
     }
@@ -520,6 +508,7 @@ fn bridge_state(json: &Value, msti: bool) -> BridgeState {
         root_port,
         root_cost: number(json, cost),
         topology_changes: number(json, "topology-change-count"),
+        time_since_topology_change: number(json, "time-since-topology-change"),
     }
 }
 
@@ -543,9 +532,22 @@ fn port_state(json: &Value, msti: bool) -> PortState {
         _ => None,
     };
     let designated_port = port_id(json, "designated-port");
-    let (root, cost) = match msti {
-        false => ("designated-root", "dsgn-external-cost"),
-        true => ("dsgn-regional-root", "dsgn-internal-cost"),
+    let (root, cost, port_cost) = match msti {
+        false => (
+            "designated-root",
+            "dsgn-external-cost",
+            "external-port-cost",
+        ),
+        true => (
+            "dsgn-regional-root",
+            "dsgn-internal-cost",
+            "internal-port-cost",
+        ),
+    };
+    let yes = |key: &str| match text(json, key) {
+        Some("yes") => Some(true),
+        Some("no") => Some(false),
+        _ => None,
     };
     PortState {
         port_num: port_id(json, "port-id").map(|(_, n)| n),
@@ -559,6 +561,9 @@ fn port_state(json: &Value, msti: bool) -> PortState {
         forward_transitions: number(json, "num-transition-fwd"),
         bpdu_sent: number(json, "num-tx-bpdu"),
         bpdu_received: number(json, "num-rx-bpdu"),
+        path_cost: number(json, port_cost),
+        oper_edge: yes("oper-edge-port"),
+        oper_point_to_point: yes("point-to-point"),
     }
 }
 

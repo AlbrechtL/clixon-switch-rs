@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Localized SNMPv3 USM keys for /snmp/usm of ietf-snmp.
+
+ietf-snmp (RFC 7407) stores USM keys localized to the SNMP engine, not
+passphrases. This turns a passphrase and the switch's engine ID into the key
+for auth/sha/key or priv/aes/key (RFC 3414 A.2.2, SHA-1; an AES-128 key is
+the first 16 octets, RFC 3826 1.2), as colon-separated hex:
+
+    scripts/snmp-localize-key --engine-id 80:00:1f:88:03:02:00:00:00:00:01 \\
+        --auth 'auth passphrase' --priv 'priv passphrase'
+
+The engine ID is /snmp/engine/engine-id, or, without one, the switch's
+/snmp/engine/clixon-switch:engine-id-in-use. The passphrases are what an
+SNMP manager is given (snmpget -a SHA -A ... -x AES -X ...). Run it on your
+own computer: the passphrases never go to the switch.
+"""
+
+import argparse
+import getpass
+import hashlib
+import sys
+
+ONE_MEGABYTE = 1048576
+
+
+def localize(passphrase: bytes, engine_id: bytes) -> bytes:
+    """RFC 3414 A.2.2: SHA-1 of 1 MB of the repeated passphrase, then of the
+    key around the engine ID."""
+    if not passphrase:
+        raise ValueError("empty passphrase")
+    repeated = passphrase * (ONE_MEGABYTE // len(passphrase) + 1)
+    key = hashlib.sha1(repeated[:ONE_MEGABYTE]).digest()
+    return hashlib.sha1(key + engine_id + key).digest()
+
+
+def colon_hex(octets: bytes) -> str:
+    return ":".join(f"{o:02x}" for o in octets)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--engine-id", required=True,
+                        help="the engine ID, colon-separated hex octets")
+    parser.add_argument("--auth", help="authentication passphrase (asked if missing)")
+    parser.add_argument("--priv", help="privacy passphrase (asked if missing; empty: none)")
+    args = parser.parse_args()
+
+    try:
+        engine_id = bytes.fromhex(args.engine_id.replace(":", ""))
+    except ValueError:
+        parser.error(f"engine ID {args.engine_id} is not hex octets")
+    if not 5 <= len(engine_id) <= 32:
+        parser.error("an engine ID has 5 to 32 octets")
+
+    auth = args.auth if args.auth is not None else getpass.getpass("auth passphrase: ")
+    priv = args.priv if args.priv is not None else getpass.getpass("priv passphrase (empty: none): ")
+    if len(auth) < 8 or (priv and len(priv) < 8):
+        # net-snmp's managers refuse shorter ones (RFC 3414 11.2).
+        parser.error("passphrases need at least 8 characters")
+
+    print(f"auth sha key: {colon_hex(localize(auth.encode(), engine_id))}")
+    if priv:
+        print(f"priv aes key: {colon_hex(localize(priv.encode(), engine_id)[:16])}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

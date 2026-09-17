@@ -40,6 +40,7 @@ fn factory_default() -> DesiredState {
             },
         )]),
         stp: None,
+        ..DesiredState::default()
     }
 }
 

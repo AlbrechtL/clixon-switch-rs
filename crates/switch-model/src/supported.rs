@@ -8,8 +8,9 @@
 //! YANG default ([`Rule::Default`]), because clixon fills defaults into the
 //! tree. Operational state, which clixon merges into the tree unless
 //! CLICON_VALIDATE_TARGET_STATE is off (clixon.xml turns it off), and the
-//! top-level modules other than openconfig-interfaces, clixon-switch and
-//! openconfig-spanning-tree (NACM, YANG library, ...) are not checked.
+//! top-level modules other than openconfig-interfaces, clixon-switch,
+//! openconfig-spanning-tree and ietf-snmp (NACM, YANG library, ...) are not
+//! checked.
 //!
 //! Implementing more of the model means moving leaves from `Default` to
 //! `Any` and adding containers here.
@@ -299,8 +300,71 @@ const STP: &[(&str, Rule)] = &[
     ),
 ];
 
+/// `/snmp`: SNMPv3 with local USM users (SHA, AES) and VACM read access.
+/// Not implemented: SNMPv1/v2c and communities, notifications (targets,
+/// filters), proxies, TSM/TLS/SSH, remote USM users, MD5 and DES, contexts,
+/// and write and notify views.
+const SNMP: &[(&str, Rule)] = &[
+    (
+        "engine",
+        Node(&[
+            ("enabled", Any),
+            (
+                "listen",
+                List(&[("name", Any), ("udp", Node(&[("ip", Any), ("port", Any)]))]),
+            ),
+            ("version", Node(&[("v3", Any)])),
+            ("engine-id", Any),
+            ("enable-authen-traps", Default("false")),
+        ]),
+    ),
+    (
+        "usm",
+        Node(&[(
+            "local",
+            Node(&[(
+                "user",
+                List(&[
+                    ("name", Any),
+                    ("auth", Node(&[("sha", Node(&[("key", Any)]))])),
+                    ("priv", Node(&[("aes", Node(&[("key", Any)]))])),
+                ]),
+            )]),
+        )]),
+    ),
+    (
+        "vacm",
+        Node(&[
+            (
+                "group",
+                List(&[
+                    ("name", Any),
+                    (
+                        "member",
+                        List(&[("security-name", Any), ("security-model", Any)]),
+                    ),
+                    (
+                        "access",
+                        List(&[
+                            ("context", Default("")),
+                            ("context-match", Default("exact")),
+                            ("security-model", Any),
+                            ("security-level", Any),
+                            ("read-view", Any),
+                        ]),
+                    ),
+                ]),
+            ),
+            (
+                "view",
+                List(&[("name", Any), ("include", Any), ("exclude", Any)]),
+            ),
+        ]),
+    ),
+];
+
 /// The top-level containers besides `/interfaces`: the clixon-switch
-/// module's, all implemented, and `/stp`.
+/// module's, all implemented, `/stp` and `/snmp`.
 const TOP: &[(&str, Rule)] = &[
     (
         "clixon-switch:vlans",
@@ -321,7 +385,13 @@ const TOP: &[(&str, Rule)] = &[
         "clixon-switch:switch",
         Node(&[("config", Node(&[("vlan-mode", Any)])), STATE]),
     ),
-    ("clixon-switch:system", Node(&[STATE])),
+    (
+        "clixon-switch:system",
+        Node(&[
+            ("config", Node(&[("contact", Any), ("location", Any)])),
+            STATE,
+        ]),
+    ),
     (
         "clixon-switch:port-based-vlans",
         Node(&[(
@@ -334,6 +404,7 @@ const TOP: &[(&str, Rule)] = &[
         )]),
     ),
     ("openconfig-spanning-tree:stp", Node(STP)),
+    ("ietf-snmp:snmp", Node(SNMP)),
 ];
 
 /// One error per configured node in `config` (the RFC 7951 JSON of a
