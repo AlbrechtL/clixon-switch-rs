@@ -5,6 +5,7 @@
   <CLICON_CONFIGDIR>@SYSCONFDIR@/clixon/clixon-switch</CLICON_CONFIGDIR>
   <CLICON_FEATURE>ietf-netconf:startup</CLICON_FEATURE>
   <CLICON_FEATURE>clixon-restconf:allow-auth-none</CLICON_FEATURE>
+  <CLICON_FEATURE>clixon-restconf:http-data</CLICON_FEATURE>
   <CLICON_YANG_DIR>@DATADIR@/clixon</CLICON_YANG_DIR>
   <CLICON_YANG_DIR>@DATADIR@/clixon-switch/yang</CLICON_YANG_DIR>
   <CLICON_YANG_MODULE_MAIN>clixon-switch</CLICON_YANG_MODULE_MAIN>
@@ -34,11 +35,17 @@
   <!-- Explicit save: RESTCONF edits change running only. Persist with the
        CLI "save" command or a copy-config running -> startup. -->
   <CLICON_RESTCONF_STARTUP_DONTUPDATE>true</CLICON_RESTCONF_STARTUP_DONTUPDATE>
+  <!-- The web UI: clixon_restconf serves the static files below / itself,
+       so the page is on the same origin as /restconf, which (with
+       /.well-known) is matched first. / is index.html. Symbolic links are
+       not followed. -->
+  <CLICON_HTTP_DATA_ROOT>@DATADIR@/clixon-switch/www</CLICON_HTTP_DATA_ROOT>
   <restconf>
     <enable>true</enable>
     <!-- No authentication and no TLS: proof of concept only. -->
     <auth-type>none</auth-type>
     <pretty>true</pretty>
+    <enable-http-data>true</enable-http-data>
     <socket>
       <namespace>default</namespace>
       <address>0.0.0.0</address>

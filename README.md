@@ -206,6 +206,24 @@ Switch ports are the DSA user ports. `CLIXON_SWITCH_PORTS="lan1 lan2"` in the
 environment of `clixon_backend` names other links instead, e.g. dummy links
 in a test container.
 
+### System state and status page
+
+`/system/state` (`clixon-switch`) is state data independent of the
+configuration: host name, the firmware's `NAME` and `VERSION` from
+`/etc/os-release`, kernel release, clock, uptime, load averages and memory.
+
+`clixon_restconf` serves `www/` at `/` (clixon's `http-data`, see
+`clixon.xml`): a read-only status page with the system state, the routed
+VLAN interfaces with their addresses and DHCP lease, the ports and the VLANs
+or port-based groups. It uses nothing but RESTCONF GETs on the same origin,
+refreshes every 5 seconds, and links to SWUpdate's web UI on port 8080.
+There is no authentication yet, like RESTCONF itself.
+
+```sh
+curl -H 'Accept: application/yang-data+json' \
+  http://192.168.1.1/restconf/data/clixon-switch:system
+```
+
 ### Persistence
 
 Commits change the running configuration only. `save` in the CLI, or a
@@ -232,6 +250,7 @@ default.
 | `crates/clixon-plugin` | safe plugin interface: callbacks, panics caught, logging, transactions |
 | `crates/clixon-switch-plugin` | the cdylib clixon loads |
 | `clixon/` | `clixon.xml` template, `autocli.xml`, CLI spec |
+| `www/` | the status page (plain HTML, CSS, JavaScript), served by `clixon_restconf` |
 | `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, `/sbin/bridge-stp`, YANG vendoring |
 | `dev/` | development container with clixon at the Yocto recipes' revisions, and mstpd with the layer's patches |
 | `tests/integration/` | RESTCONF tests against clixon in the container |

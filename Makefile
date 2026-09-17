@@ -1,5 +1,6 @@
-# Installs the plugin with its YANG, clixon configuration and factory
-# default. The plugin is built by cargo; PLUGIN points at the library.
+# Installs the plugin with its YANG, clixon configuration, factory
+# default and the web UI (www/, served by clixon_restconf). The plugin is
+# built by cargo; PLUGIN points at the library.
 # The kernel runs /sbin/bridge-stp, outside PREFIX: link it to
 # LIBDIR/clixon-switch/bridge-stp.
 #
@@ -54,6 +55,9 @@ install: all
 	$(INSTALL) -D -m 0755 scripts/udhcpc-script.sh $(DESTDIR)$(LIBDIR)/$(APP)/udhcpc-script
 	$(INSTALL) -D -m 0755 scripts/bridge-stp.sh $(DESTDIR)$(LIBDIR)/$(APP)/bridge-stp
 	$(INSTALL) -D -m 0644 $(BUILDDIR)/factory-default.xml $(DESTDIR)$(DATADIR)/$(APP)/factory-default.xml
+	for f in www/*; do \
+	    $(INSTALL) -D -m 0644 "$$f" "$(DESTDIR)$(DATADIR)/$(APP)/$$f" || exit 1; \
+	done
 	cd yang && find . -name '*.yang' | sort | while read -r f; do \
 	    $(INSTALL) -D -m 0644 "$$f" "$(DESTDIR)$(DATADIR)/$(APP)/yang/$$f" || exit 1; \
 	done

@@ -114,6 +114,15 @@ check "no address on br-lan" "" "$(addresses br-lan)"
 request GET "$RC/data/clixon-switch:switch" >/dev/null
 check "vlan-mode DOT1Q" DOT1Q "$(jq -r '.["clixon-switch:switch"].state["vlan-mode"]' /tmp/body)"
 
+echo "# web UI and system state"
+check "/ is index.html" "200 text/html" "$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' http://localhost:8080/)"
+check "app.js" "200 application/javascript" "$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' http://localhost:8080/app.js)"
+check "no file outside the web root" 404 "$(curl -sS -o /dev/null -w '%{http_code}' http://localhost:8080/clixon.xml)"
+request GET "$RC/data/clixon-switch:system" >/dev/null
+check "system hostname" "$(cat /proc/sys/kernel/hostname)" "$(jq -r '.["clixon-switch:system"].state.hostname' /tmp/body)"
+check "system uptime" true "$(jq -r '.["clixon-switch:system"].state.uptime | tonumber > 0' /tmp/body)"
+check "system memory" true "$(jq -r '.["clixon-switch:system"].state | (.["memory-total"] | tonumber) >= (.["memory-available"] | tonumber)' /tmp/body)"
+
 echo "# state data"
 request GET "$IFACES/interface=lan1/state" >/dev/null
 check "lan1 admin-status" UP "$(jq -r '.["openconfig-interfaces:state"]["admin-status"]' /tmp/body)"

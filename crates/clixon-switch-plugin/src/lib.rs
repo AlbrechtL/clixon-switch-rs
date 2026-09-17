@@ -9,11 +9,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clixon_plugin::{
     export_backend_plugin, BackendPlugin, Error, Handle, Level, Result, StateTree, Transaction,
 };
-use switch_model::{state_xml, validate, AddressOrigin, DesiredState, InterfaceState};
+use switch_model::{
+    parse_loadavg, parse_meminfo, parse_os_release, parse_uptime, state_xml, system_state_xml,
+    validate, AddressOrigin, DesiredState, InterfaceState, SystemState,
+};
 use switch_net::dhcp::{self, ChildProcesses, DhcpClients, DhcpConfig, Event};
 use switch_net::netlink::NetlinkBackend;
 use switch_net::stp::{self, CommandControl, Mstpd, MstpdConfig};
@@ -219,6 +223,33 @@ impl SwitchPlugin {
     }
 }
 
+/// Host name, OS release, uptime, load and memory. Files that cannot be
+/// read leave their leaves out.
+fn system_state() -> SystemState {
+    let read = |path: &str| std::fs::read_to_string(path).ok();
+    let (os_name, os_version) = read("/etc/os-release")
+        .or_else(|| read("/usr/lib/os-release"))
+        .map(|text| parse_os_release(&text))
+        .unwrap_or_default();
+    let (memory_total, memory_available) = read("/proc/meminfo")
+        .map(|text| parse_meminfo(&text))
+        .unwrap_or_default();
+    SystemState {
+        hostname: read("/proc/sys/kernel/hostname").map(|h| h.trim().to_string()),
+        os_name,
+        os_version,
+        kernel_release: read("/proc/sys/kernel/osrelease").map(|r| r.trim().to_string()),
+        uptime: read("/proc/uptime").and_then(|text| parse_uptime(&text)),
+        load_average: read("/proc/loadavg").and_then(|text| parse_loadavg(&text)),
+        memory_total,
+        memory_available,
+        current_time: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs()),
+    }
+}
+
 impl BackendPlugin for SwitchPlugin {
     fn start(&mut self, h: Handle) -> Result<()> {
         // Loopback and the DSA conduit come up here already, independent of
@@ -273,6 +304,8 @@ impl BackendPlugin for SwitchPlugin {
     }
 
     fn statedata(&mut self, _h: Handle, xpath: Option<&str>, state: &mut StateTree) -> Result<()> {
+        // Independent of the configuration, so also before the first commit.
+        state.add_xml(&system_state_xml(&system_state()))?;
         if self.applied == DesiredState::default() {
             return Ok(());
         }

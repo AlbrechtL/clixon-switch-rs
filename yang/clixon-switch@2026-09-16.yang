@@ -11,6 +11,7 @@ module clixon-switch {
   import openconfig-vlan-types { prefix oc-vlan-types; }
   import openconfig-if-ip { prefix oc-ip; }
   import openconfig-inet-types { prefix oc-inet; }
+  import openconfig-yang-types { prefix oc-yang; }
   import openconfig-spanning-tree { prefix oc-stp; }
   import openconfig-spanning-tree-types { prefix oc-stp-types; }
 
@@ -37,7 +38,8 @@ module clixon-switch {
       "VLAN database, trunk ports, VLAN mode and port-based VLAN groups.
        State of the DHCP client's lease.
        Spanning tree: identity STP, and the CIST's bridge priority and
-       ports in MSTP.";
+       ports in MSTP.
+       System state: host name, OS release, uptime, load and memory.";
   }
   revision 2026-09-15 {
     description "Initial revision.";
@@ -74,6 +76,73 @@ module clixon-switch {
     container state {
       config false;
       uses switch-config;
+    }
+  }
+
+  // ietf-system and openconfig-system are too big for what the switch
+  // reports, and mostly configuration it does not implement.
+  container system {
+    description "The switch as a whole.";
+    container state {
+      config false;
+      description "Read from /proc and os-release on every request.";
+      leaf hostname {
+        type string;
+        description "Kernel host name.";
+      }
+      leaf os-name {
+        type string;
+        description "NAME of os-release.";
+      }
+      leaf os-version {
+        type string;
+        description "VERSION of os-release: the firmware version.";
+      }
+      leaf kernel-release {
+        type string;
+        description "Linux kernel release.";
+      }
+      leaf current-datetime {
+        type oc-yang:date-and-time;
+        description
+          "System clock, in UTC. The switch has no real-time clock: it
+           starts at the Unix epoch on every boot.";
+      }
+      leaf uptime {
+        type uint64;
+        units seconds;
+        description "Time since boot.";
+      }
+      leaf load-average-1 {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        description "Load average over 1 minute.";
+      }
+      leaf load-average-5 {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        description "Load average over 5 minutes.";
+      }
+      leaf load-average-15 {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        description "Load average over 15 minutes.";
+      }
+      leaf memory-total {
+        type uint64;
+        units kilobytes;
+        description "Usable RAM (MemTotal).";
+      }
+      leaf memory-available {
+        type uint64;
+        units kilobytes;
+        description
+          "RAM available to new processes without swapping
+           (MemAvailable).";
+      }
     }
   }
 

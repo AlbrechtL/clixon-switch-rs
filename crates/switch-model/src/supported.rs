@@ -321,6 +321,7 @@ const TOP: &[(&str, Rule)] = &[
         "clixon-switch:switch",
         Node(&[("config", Node(&[("vlan-mode", Any)])), STATE]),
     ),
+    ("clixon-switch:system", Node(&[STATE])),
     (
         "clixon-switch:port-based-vlans",
         Node(&[(
