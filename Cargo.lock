@@ -165,6 +165,7 @@ dependencies = [
  "netlink-packet-core",
  "netlink-packet-route",
  "netlink-sys",
+ "serde_json",
  "switch-model",
 ]
 

@@ -271,7 +271,7 @@ fn is_udhcpc(pid: u32) -> bool {
 }
 
 /// SIGTERM, wait for `gone`, SIGKILL after [`STOP_TIMEOUT`].
-fn terminate(pid: u32, mut gone: impl FnMut() -> bool) {
+pub(crate) fn terminate(pid: u32, mut gone: impl FnMut() -> bool) {
     let Ok(pid_t) = libc::pid_t::try_from(pid) else {
         return;
     };

@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use switch_model::Port;
 
-use crate::{ActualState, DesiredState, Error, LinkKind, Op, Result, VlanFlags, BRIDGE_NAME};
+use crate::{
+    ActualState, BridgeStp, DesiredState, Error, LinkKind, Op, Result, VlanFlags, BRIDGE_NAME,
+};
 
 const ACCESS: VlanFlags = VlanFlags {
     pvid: true,
@@ -20,6 +22,9 @@ const TAGGED: VlanFlags = VlanFlags {
 /// match: the bridge, the switch ports (DSA user ports), and VLAN links on the
 /// bridge. Any other link is left alone, and an SVI whose name is taken by one
 /// of them is an error.
+///
+/// Spanning tree is switched on before ports join the bridge, so that they
+/// never flood BPDUs.
 ///
 /// New addresses are added before stale ones are removed, so that moving the
 /// management address does not pass through a state without one. Addresses
@@ -50,8 +55,14 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
         Some(LinkKind::Bridge {
             vlan_filtering: true,
             default_pvid: 0,
+            mst_enabled: true,
+            ..
         }) => false,
-        Some(LinkKind::Bridge { .. }) => {
+        Some(LinkKind::Bridge {
+            mst_enabled,
+            default_pvid,
+            ..
+        }) if *mst_enabled || !port_vlans_remain(actual, *default_pvid) => {
             ops.push(Op::ConfigureBridge { name: br.into() });
             false
         }
@@ -69,6 +80,23 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
         ops.push(Op::SetUp {
             name: br.into(),
             up: true,
+        });
+    }
+    let stp = match (fresh_bridge, bridge.map(|l| &l.kind)) {
+        (false, Some(LinkKind::Bridge { stp, .. })) => *stp,
+        _ => BridgeStp::Off,
+    };
+    let want_stp = desired.stp.is_some();
+    if stp == BridgeStp::Kernel {
+        ops.push(Op::SetBridgeStp {
+            name: br.into(),
+            on: false,
+        });
+    }
+    if want_stp != (stp == BridgeStp::User) {
+        ops.push(Op::SetBridgeStp {
+            name: br.into(),
+            on: want_stp,
         });
     }
 
@@ -228,6 +256,22 @@ pub fn plan(desired: &DesiredState, actual: &ActualState) -> Result<Vec<Op>> {
     }
 
     Ok(ops)
+}
+
+/// Whether a port of the bridge keeps VLAN entries when ConfigureBridge sets
+/// vlan_default_pvid from `default_pvid` to 0, which removes the default
+/// entries: then the kernel refuses to enable MST.
+fn port_vlans_remain(actual: &ActualState, default_pvid: u16) -> bool {
+    actual
+        .links
+        .iter()
+        .filter(|(_, l)| l.master.as_deref() == Some(BRIDGE_NAME))
+        .filter_map(|(name, _)| actual.bridge_vlans.get(name))
+        .any(|vlans| {
+            vlans
+                .iter()
+                .any(|(vid, flags)| *vid != default_pvid || *flags != ACCESS)
+        })
 }
 
 /// Bridge VLAN entries of a port: its native VLAN untagged and as PVID, the

@@ -1,7 +1,7 @@
 //! In-memory [`NetBackend`] that models the kernel's behaviour closely
 //! enough to test planning without netlink or privileges.
 
-use crate::{ActualState, Error, Link, LinkKind, NetBackend, Op, Result, VlanFlags};
+use crate::{ActualState, BridgeStp, Error, Link, LinkKind, NetBackend, Op, Result, VlanFlags};
 
 #[derive(Debug, Clone, Default)]
 pub struct FakeNet {
@@ -56,6 +56,8 @@ impl NetBackend for FakeNet {
                     link(LinkKind::Bridge {
                         vlan_filtering: true,
                         default_pvid: 0,
+                        mst_enabled: true,
+                        stp: BridgeStp::Off,
                     }),
                 );
             }
@@ -63,23 +65,40 @@ impl NetBackend for FakeNet {
                 Some(LinkKind::Bridge {
                     vlan_filtering,
                     default_pvid,
+                    mst_enabled,
+                    ..
                 }) => {
                     // Like the kernel, dropping the default PVID removes the
                     // default VLAN from ports that still have it unchanged.
                     let old = *default_pvid;
                     *vlan_filtering = true;
                     *default_pvid = 0;
-                    if old != 0 {
-                        for (port, l) in &s.links {
-                            if l.master.as_deref() == Some(name) {
-                                if let Some(vlans) = s.bridge_vlans.get_mut(port) {
-                                    if vlans.get(&old).is_some_and(|f| f.pvid && f.untagged) {
-                                        vlans.remove(&old);
-                                    }
-                                }
+                    let was_mst = *mst_enabled;
+                    *mst_enabled = true;
+                    let mut port_vlans = false;
+                    for (port, l) in &s.links {
+                        if l.master.as_deref() != Some(name) {
+                            continue;
+                        }
+                        if let Some(vlans) = s.bridge_vlans.get_mut(port) {
+                            if old != 0 && vlans.get(&old).is_some_and(|f| f.pvid && f.untagged) {
+                                vlans.remove(&old);
                             }
+                            port_vlans |= !vlans.is_empty();
                         }
                     }
+                    if !was_mst && port_vlans {
+                        return err(
+                            "Device or resource busy: MST mode can't be changed while VLANs exist",
+                        );
+                    }
+                }
+                _ => return err("not a bridge"),
+            },
+            Op::SetBridgeStp { name, on } => match s.links.get_mut(name).map(|l| &mut l.kind) {
+                // As with a working /sbin/bridge-stp.
+                Some(LinkKind::Bridge { stp, .. }) => {
+                    *stp = if *on { BridgeStp::User } else { BridgeStp::Off }
                 }
                 _ => return err("not a bridge"),
             },

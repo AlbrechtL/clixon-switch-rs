@@ -15,19 +15,24 @@ use netlink_packet_route::address::{
     AddressAttribute, AddressFlags, AddressHeaderFlags, AddressMessage,
 };
 use netlink_packet_route::link::{
-    AfSpecBridge, BridgeFlag, BridgeVlanInfo, BridgeVlanInfoFlags, InfoBridge, InfoData, InfoDsa,
-    InfoKind, InfoVlan, LinkAttribute, LinkExtentMask, LinkFlags, LinkInfo, LinkMessage, State,
+    AfSpecBridge, BridgeBooleanOptionFlags, BridgeBooleanOptions, BridgeFlag, BridgeStpState,
+    BridgeVlanInfo, BridgeVlanInfoFlags, InfoBridge, InfoData, InfoDsa, InfoKind, InfoVlan,
+    LinkAttribute, LinkExtentMask, LinkFlags, LinkInfo, LinkMessage, State,
 };
 use netlink_packet_route::{AddressFamily, RouteNetlinkMessage};
 use netlink_sys::{protocols::NETLINK_ROUTE, Socket, SocketAddr};
 use switch_model::{InterfaceState, Ipv4Prefix, BRIDGE_NAME};
 
-use crate::{ActualState, Error, Link, LinkKind, NetBackend, Op, Result, VlanFlags};
+use crate::{ActualState, BridgeStp, Error, Link, LinkKind, NetBackend, Op, Result, VlanFlags};
 
 pub struct NetlinkBackend {
     socket: Socket,
     seq: u32,
     ports: Option<BTreeSet<String>>,
+    /// See [`NetlinkBackend::stp_in_netns`].
+    stp_in_netns: bool,
+    /// Bridges with spanning tree switched on, while `stp_in_netns`.
+    stp_bridges: BTreeSet<String>,
 }
 
 fn io_error(context: &'static str) -> impl Fn(io::Error) -> Error {
@@ -47,7 +52,19 @@ impl NetlinkBackend {
             socket,
             seq: 0,
             ports,
+            stp_in_netns: false,
+            stp_bridges: BTreeSet::new(),
         })
+    }
+
+    /// For test setups in a network namespace other than the host's, where
+    /// the kernel never leaves spanning tree to userspace: switching it on
+    /// leaves stp_state 0, and the bridge is reported as if mstpd had it.
+    /// mstpd still configures the bridge and sets port states, but the
+    /// bridge forwards BPDUs instead of passing them up, so spanning tree
+    /// does not converge.
+    pub fn stp_in_netns(&mut self) {
+        self.stp_in_netns = true;
     }
 
     /// Sends one request and collects the replies up to the final DONE (for
@@ -188,6 +205,16 @@ impl NetlinkBackend {
         )
     }
 
+    fn set_stp_state(&mut self, bridge: &str, state: BridgeStpState) -> Result<()> {
+        let mut message = LinkMessage::default();
+        message.header.index = self.index(bridge)?;
+        message.attributes = vec![LinkAttribute::LinkInfo(vec![
+            LinkInfo::Kind(InfoKind::Bridge),
+            LinkInfo::Data(InfoData::Bridge(vec![InfoBridge::StpState(state)])),
+        ])];
+        self.modify(RouteNetlinkMessage::NewLink(message), 0)
+    }
+
     /// Operational state of every link, by name.
     pub fn interface_states(&mut self) -> Result<BTreeMap<String, InterfaceState>> {
         let mut states = BTreeMap::new();
@@ -239,6 +266,11 @@ impl NetBackend for NetlinkBackend {
                 continue;
             };
             let mut kind = link_kind(message, &names);
+            if let LinkKind::Bridge { stp, .. } = &mut kind {
+                if self.stp_in_netns && self.stp_bridges.contains(name) {
+                    *stp = BridgeStp::User;
+                }
+            }
             if let Some(ports) = &self.ports {
                 kind = match kind {
                     LinkKind::Dsa { .. } if !ports.contains(name) => LinkKind::Other,
@@ -364,7 +396,44 @@ impl NetBackend for NetlinkBackend {
                 message.attributes = vec![bridge_info()];
                 self.modify(RouteNetlinkMessage::NewLink(message), 0)
             }
+            Op::SetBridgeStp { name, on } if self.stp_in_netns => {
+                match on {
+                    true => self.stp_bridges.insert(name.clone()),
+                    false => self.stp_bridges.remove(name),
+                };
+                Ok(())
+            }
+            Op::SetBridgeStp { name, on: false } => {
+                self.set_stp_state(name, BridgeStpState::Disabled)
+            }
+            Op::SetBridgeStp { name, on: true } => {
+                // Requests spanning tree. The kernel asks /sbin/bridge-stp,
+                // and runs its own STP (stp_state 1) unless that succeeds, or
+                // leaves it to userspace (stp_state 2).
+                self.set_stp_state(name, BridgeStpState::KernelStp)?;
+                let kernel_stp = self
+                    .dump_links(AddressFamily::Unspec, vec![])?
+                    .iter()
+                    .filter(|m| link_name(m) == Some(name.as_str()))
+                    .any(|m| {
+                        matches!(
+                            link_kind(m, &BTreeMap::new()),
+                            LinkKind::Bridge {
+                                stp: BridgeStp::Kernel,
+                                ..
+                            }
+                        )
+                    });
+                if kernel_stp {
+                    self.set_stp_state(name, BridgeStpState::Disabled)?;
+                    return Err(Error(
+                        "the kernel did not leave spanning tree to mstpd: /sbin/bridge-stp is missing or failed".into(),
+                    ));
+                }
+                Ok(())
+            }
             Op::DeleteLink { name } => {
+                self.stp_bridges.remove(name);
                 let mut message = LinkMessage::default();
                 message.header.index = self.index(name)?;
                 self.modify(RouteNetlinkMessage::DelLink(message), 0)
@@ -417,6 +486,10 @@ fn bridge_info() -> LinkAttribute {
         LinkInfo::Data(InfoData::Bridge(vec![
             InfoBridge::VlanFiltering(true),
             InfoBridge::VlanDefaultPvid(0),
+            InfoBridge::MultiBoolOpt(BridgeBooleanOptions {
+                value: BridgeBooleanOptionFlags::MstEnable,
+                mask: BridgeBooleanOptionFlags::MstEnable,
+            }),
         ])),
     ])
 }
@@ -466,11 +539,19 @@ fn link_kind(message: &LinkMessage, names: &BTreeMap<u32, String>) -> LinkKind {
             // Kernel defaults, in case the attributes are missing.
             let mut vlan_filtering = false;
             let mut default_pvid = 1;
+            let mut mst_enabled = false;
+            let mut stp = BridgeStp::Off;
             if let Some(InfoData::Bridge(bridge)) = data {
                 for b in bridge {
                     match b {
                         InfoBridge::VlanFiltering(v) => vlan_filtering = *v,
                         InfoBridge::VlanDefaultPvid(p) => default_pvid = *p,
+                        InfoBridge::MultiBoolOpt(o) => {
+                            mst_enabled = o.value.contains(BridgeBooleanOptionFlags::MstEnable)
+                        }
+                        InfoBridge::StpState(BridgeStpState::Disabled) => stp = BridgeStp::Off,
+                        InfoBridge::StpState(BridgeStpState::UserStp) => stp = BridgeStp::User,
+                        InfoBridge::StpState(_) => stp = BridgeStp::Kernel,
                         _ => {}
                     }
                 }
@@ -478,6 +559,8 @@ fn link_kind(message: &LinkMessage, names: &BTreeMap<u32, String>) -> LinkKind {
             LinkKind::Bridge {
                 vlan_filtering,
                 default_pvid,
+                mst_enabled,
+                stp,
             }
         }
         (Some(InfoKind::Vlan), Some(InfoData::Vlan(vlan))) => {

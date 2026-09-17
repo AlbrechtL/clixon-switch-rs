@@ -20,6 +20,9 @@ tty=""
 
 exec docker run --rm $tty \
     --cap-add NET_ADMIN \
+    `# mstpd answers mstpctl with the client's SCM_CREDENTIALS attached, which` \
+    `# the kernel only allows with CAP_SYS_ADMIN.` \
+    --cap-add SYS_ADMIN \
     -v "$top:/src:ro" \
     -v clixon-switch-cargo:/usr/local/cargo/registry \
     -v clixon-switch-target:/target \

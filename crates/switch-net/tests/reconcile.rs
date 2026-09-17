@@ -3,7 +3,9 @@ use std::net::Ipv4Addr;
 
 use switch_model::{DesiredState, Ipv4Prefix, Port, Svi, Vlan, VlanMode};
 use switch_net::fake::FakeNet;
-use switch_net::{plan, reconcile, Link, LinkKind, NetBackend, Op, VlanFlags, BRIDGE_NAME};
+use switch_net::{
+    plan, reconcile, BridgeStp, Link, LinkKind, NetBackend, Op, VlanFlags, BRIDGE_NAME,
+};
 
 const ACCESS: VlanFlags = VlanFlags {
     pvid: true,
@@ -37,6 +39,7 @@ fn factory_default() -> DesiredState {
                 dhcp_client: false,
             },
         )]),
+        stp: None,
     }
 }
 
@@ -67,7 +70,9 @@ fn assert_factory_default_applied(net: &FakeNet) {
         s.links[BRIDGE_NAME].kind,
         LinkKind::Bridge {
             vlan_filtering: true,
-            default_pvid: 0
+            default_pvid: 0,
+            mst_enabled: true,
+            stp: BridgeStp::Off,
         }
     );
     assert!(s.links[BRIDGE_NAME].up);
@@ -119,6 +124,8 @@ fn migration_from_static_network_script() {
             kind: LinkKind::Bridge {
                 vlan_filtering: false,
                 default_pvid: 1,
+                mst_enabled: false,
+                stp: BridgeStp::Off,
             },
             up: true,
             master: None,
@@ -510,4 +517,119 @@ fn dhcp_address_on_a_port_is_removed() {
             prefix: prefix(10, 99, 0, 101, 24)
         }]
     );
+}
+
+/// The factory default with RSTP, all defaults.
+fn with_rstp() -> DesiredState {
+    let json = r#"{"openconfig-spanning-tree:stp": {"global": {"config":
+        {"enabled-protocol": ["openconfig-spanning-tree-types:RSTP"]}}}}"#;
+    let config = switch_model::Config::from_json(json).unwrap();
+    let ports = (1..=8).map(|i| format!("lan{i}")).collect();
+    let mut desired = factory_default();
+    desired.stp = switch_model::desired_state(&config, &ports).unwrap().stp;
+    assert!(desired.stp.is_some());
+    desired
+}
+
+fn bridge_stp(net: &FakeNet) -> BridgeStp {
+    match &net.state.links[BRIDGE_NAME].kind {
+        LinkKind::Bridge { stp, .. } => *stp,
+        other => panic!("not a bridge: {other:?}"),
+    }
+}
+
+#[test]
+fn spanning_tree_is_on_before_ports_join() {
+    let mut net = FakeNet::gs1900_8();
+    let desired = with_rstp();
+    let ops = run(&mut net, &desired);
+    assert_eq!(bridge_stp(&net), BridgeStp::User);
+    let stp_on = position(
+        &ops,
+        &Op::SetBridgeStp {
+            name: BRIDGE_NAME.into(),
+            on: true,
+        },
+    );
+    let first_port = position(
+        &ops,
+        &Op::SetMaster {
+            name: "lan1".into(),
+            master: Some(BRIDGE_NAME.into()),
+        },
+    );
+    assert!(stp_on < first_port);
+}
+
+#[test]
+fn spanning_tree_off_and_on_again() {
+    let mut net = FakeNet::gs1900_8();
+    run(&mut net, &with_rstp());
+    let ops = run(&mut net, &factory_default());
+    assert_eq!(
+        ops,
+        vec![Op::SetBridgeStp {
+            name: BRIDGE_NAME.into(),
+            on: false
+        }]
+    );
+    assert_eq!(bridge_stp(&net), BridgeStp::Off);
+    let ops = run(&mut net, &with_rstp());
+    assert_eq!(
+        ops,
+        vec![Op::SetBridgeStp {
+            name: BRIDGE_NAME.into(),
+            on: true
+        }]
+    );
+}
+
+#[test]
+fn kernel_stp_is_replaced() {
+    let mut net = FakeNet::gs1900_8();
+    run(&mut net, &with_rstp());
+    if let LinkKind::Bridge { stp, .. } = &mut net.state.links.get_mut(BRIDGE_NAME).unwrap().kind {
+        *stp = BridgeStp::Kernel;
+    }
+    let off = Op::SetBridgeStp {
+        name: BRIDGE_NAME.into(),
+        on: false,
+    };
+    let on = Op::SetBridgeStp {
+        name: BRIDGE_NAME.into(),
+        on: true,
+    };
+    assert_eq!(run(&mut net, &with_rstp()), vec![off.clone(), on]);
+    net.state.links.get_mut(BRIDGE_NAME).unwrap().kind = LinkKind::Bridge {
+        vlan_filtering: true,
+        default_pvid: 0,
+        mst_enabled: true,
+        stp: BridgeStp::Kernel,
+    };
+    assert_eq!(run(&mut net, &factory_default()), vec![off]);
+}
+
+#[test]
+fn bridge_without_mst_and_with_port_vlans_is_recreated() {
+    let mut net = FakeNet::gs1900_8();
+    run(&mut net, &factory_default());
+    net.state.links.get_mut(BRIDGE_NAME).unwrap().kind = LinkKind::Bridge {
+        vlan_filtering: true,
+        default_pvid: 0,
+        mst_enabled: false,
+        stp: BridgeStp::Off,
+    };
+    let ops = run(&mut net, &factory_default());
+    assert_eq!(
+        ops[..2],
+        [
+            Op::DeleteLink {
+                name: BRIDGE_NAME.into()
+            },
+            Op::CreateBridge {
+                name: BRIDGE_NAME.into()
+            }
+        ]
+    );
+    assert_factory_default_applied(&net);
 }

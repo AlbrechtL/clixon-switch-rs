@@ -8,8 +8,8 @@
 //! YANG default ([`Rule::Default`]), because clixon fills defaults into the
 //! tree. Operational state, which clixon merges into the tree unless
 //! CLICON_VALIDATE_TARGET_STATE is off (clixon.xml turns it off), and the
-//! top-level modules other than openconfig-interfaces and clixon-switch
-//! (NACM, YANG library, ...) are not checked.
+//! top-level modules other than openconfig-interfaces, clixon-switch and
+//! openconfig-spanning-tree (NACM, YANG library, ...) are not checked.
 //!
 //! Implementing more of the model means moving leaves from `Default` to
 //! `Any` and adding containers here.
@@ -190,8 +190,118 @@ const IPV6: &[(&str, Rule)] = &[
     ),
 ];
 
-/// The clixon-switch module's top-level containers, all implemented.
-const SWITCH: &[(&str, Rule)] = &[
+/// Cost and priority of the ports in one spanning tree: members of an
+/// `interfaces` container.
+const STP_TREE_INTERFACES: &[(&str, Rule)] = &[(
+    "interface",
+    List(&[
+        ("name", Any),
+        (
+            "config",
+            Node(&[("name", Any), ("cost", Any), ("port-priority", Any)]),
+        ),
+        STATE,
+    ]),
+)];
+
+/// `/stp`. Not implemented: rapid-pvst, bridge assurance, EtherChannel guard,
+/// loop guard, and BPDU guard recovery.
+const STP: &[(&str, Rule)] = &[
+    (
+        "global",
+        Node(&[
+            (
+                "config",
+                Node(&[
+                    ("enabled-protocol", Any),
+                    ("bridge-assurance", Default("false")),
+                    ("etherchannel-misconfig-guard", Default("false")),
+                    ("loop-guard", Default("false")),
+                    ("bpdu-guard", Any),
+                    ("bpdu-filter", Any),
+                ]),
+            ),
+            STATE,
+        ]),
+    ),
+    (
+        "rstp",
+        Node(&[
+            (
+                "config",
+                Node(&[
+                    ("hello-time", Any),
+                    ("max-age", Any),
+                    ("forwarding-delay", Any),
+                    ("hold-count", Any),
+                    ("bridge-priority", Any),
+                ]),
+            ),
+            STATE,
+            ("interfaces", Node(STP_TREE_INTERFACES)),
+        ]),
+    ),
+    (
+        "mstp",
+        Node(&[
+            (
+                "config",
+                Node(&[
+                    ("name", Any),
+                    ("revision", Any),
+                    ("max-hop", Any),
+                    ("hello-time", Any),
+                    ("max-age", Any),
+                    ("forwarding-delay", Any),
+                    ("hold-count", Any),
+                    ("clixon-switch:bridge-priority", Any),
+                ]),
+            ),
+            STATE,
+            (
+                "mst-instances",
+                Node(&[(
+                    "mst-instance",
+                    List(&[
+                        ("mst-id", Any),
+                        (
+                            "config",
+                            Node(&[("mst-id", Any), ("vlan", Any), ("bridge-priority", Any)]),
+                        ),
+                        STATE,
+                        ("interfaces", Node(STP_TREE_INTERFACES)),
+                    ]),
+                )]),
+            ),
+            ("clixon-switch:interfaces", Node(STP_TREE_INTERFACES)),
+        ]),
+    ),
+    (
+        "interfaces",
+        Node(&[(
+            "interface",
+            List(&[
+                ("name", Any),
+                (
+                    "config",
+                    Node(&[
+                        ("name", Any),
+                        ("edge-port", Any),
+                        ("link-type", Any),
+                        ("guard", Any),
+                        ("bpdu-guard", Any),
+                        ("bpdu-filter", Any),
+                    ]),
+                ),
+                STATE,
+            ]),
+        )]),
+    ),
+];
+
+/// The top-level containers besides `/interfaces`: the clixon-switch
+/// module's, all implemented, and `/stp`.
+const TOP: &[(&str, Rule)] = &[
     (
         "clixon-switch:vlans",
         Node(&[(
@@ -222,6 +332,7 @@ const SWITCH: &[(&str, Rule)] = &[
             ]),
         )]),
     ),
+    ("openconfig-spanning-tree:stp", Node(STP)),
 ];
 
 /// One error per configured node in `config` (the RFC 7951 JSON of a
@@ -243,7 +354,7 @@ pub(crate) fn check(config: &Value) -> Vec<Error> {
         }));
     }
 
-    for (key, rule) in SWITCH {
+    for (key, rule) in TOP {
         if let Some(value) = config.get(key) {
             let mut messages = Vec::new();
             check_value(

@@ -9,12 +9,20 @@
 //! switch, that a VLAN is declared, one routed VLAN interface per VLAN, and
 //! so on.
 
+mod stp;
 mod supported;
 
 use serde::{de, Deserialize, Deserializer};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::net::Ipv4Addr;
+
+pub use stp::{
+    vlan_ranges, BridgeId, BridgeState, EdgePort, Msti, PortFeatures, PortState, Stp, StpProtocol,
+    StpState, Tree, TreePort, TreeState, DEFAULT_BRIDGE_PRIORITY, DEFAULT_FORWARD_DELAY,
+    DEFAULT_HELLO_TIME, DEFAULT_HOLD_COUNT, DEFAULT_MAX_AGE, DEFAULT_MAX_HOPS,
+    DEFAULT_PORT_PRIORITY,
+};
 
 /// Linux bridge that holds all switch ports. It is an implementation detail,
 /// not part of the model, so no interface may be configured with this name.
@@ -41,6 +49,8 @@ pub struct Config {
     pub switch: Option<Switch>,
     #[serde(rename = "clixon-switch:port-based-vlans")]
     pub port_based_vlans: Option<PortBasedVlans>,
+    #[serde(rename = "openconfig-spanning-tree:stp")]
+    pub stp: Option<stp::StpConfig>,
 }
 
 impl Config {
@@ -224,7 +234,7 @@ pub enum Scalar {
 }
 
 impl Scalar {
-    fn as_u64(&self) -> Option<u64> {
+    pub(crate) fn as_u64(&self) -> Option<u64> {
         match self {
             Scalar::Number(n) => Some(*n),
             Scalar::String(s) => s.parse().ok(),
@@ -271,6 +281,8 @@ pub struct DesiredState {
     pub ports: BTreeMap<String, Port>,
     /// Routed VLAN interfaces by name.
     pub svis: BTreeMap<String, Svi>,
+    /// Spanning tree, while a protocol is enabled.
+    pub stp: Option<Stp>,
 }
 
 impl DesiredState {
@@ -502,6 +514,8 @@ pub fn desired_state(
         }
     }
     state.vlans = domain.vlans;
+    let ports = state.ports.keys().cloned().collect();
+    state.stp = stp::desired_stp(config.stp.as_ref(), &ports, &mut errors);
 
     check_unique_vlans(&state, &mut errors);
     check_unique_addresses(&state, &mut errors);
@@ -1053,8 +1067,13 @@ impl Default for InterfaceState {
 
 /// State data for the configuration in `applied`, as XML that clixon merges
 /// into the configuration tree: several top-level elements, the interfaces
-/// first. Interfaces missing from `states` are skipped.
-pub fn state_xml(applied: &DesiredState, states: &BTreeMap<String, InterfaceState>) -> String {
+/// first. Interfaces missing from `states` are skipped, and so is what mstpd
+/// reports while `stp` is None.
+pub fn state_xml(
+    applied: &DesiredState,
+    states: &BTreeMap<String, InterfaceState>,
+    stp: Option<&StpState>,
+) -> String {
     use std::fmt::Write;
 
     let mut xml = String::from(r#"<interfaces xmlns="http://openconfig.net/yang/interfaces">"#);
@@ -1151,6 +1170,9 @@ pub fn state_xml(applied: &DesiredState, states: &BTreeMap<String, InterfaceStat
             xml.push_str("</port-based-vlans>");
         }
         _ => {}
+    }
+    if let Some(applied_stp) = &applied.stp {
+        stp::stp_state_xml(&mut xml, applied_stp, stp);
     }
     xml
 }

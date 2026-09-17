@@ -6,6 +6,8 @@ release/models/interfaces/openconfig-interfaces.yang
 release/models/openconfig-extensions.yang
 release/models/optical-transport/openconfig-transport-types.yang
 release/models/platform/openconfig-platform-types.yang
+release/models/stp/openconfig-spanning-tree-types.yang
+release/models/stp/openconfig-spanning-tree.yang
 release/models/types/openconfig-inet-types.yang
 release/models/types/openconfig-types.yang
 release/models/types/openconfig-yang-types.yang

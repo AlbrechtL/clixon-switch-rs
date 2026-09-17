@@ -46,6 +46,7 @@ fn applied() -> DesiredState {
                 dhcp_client: false,
             },
         )]),
+        stp: None,
     }
 }
 
@@ -69,7 +70,7 @@ fn ports_and_svis() {
         ("vlan1".to_string(), up(Some("00:11:22:33:44:66"))),
         ("eth0".to_string(), up(None)),
     ]);
-    let xml = state_xml(&applied(), &states);
+    let xml = state_xml(&applied(), &states, None);
 
     assert!(xml.starts_with(r#"<interfaces xmlns="http://openconfig.net/yang/interfaces">"#));
     assert!(xml.contains("<interface><name>lan1</name><state><admin-status>UP</admin-status><oper-status>UP</oper-status>"));
@@ -84,14 +85,14 @@ fn ports_and_svis() {
 
 #[test]
 fn interfaces_without_state_are_skipped() {
-    assert!(state_xml(&applied(), &BTreeMap::new()).starts_with(
+    assert!(state_xml(&applied(), &BTreeMap::new(), None).starts_with(
         r#"<interfaces xmlns="http://openconfig.net/yang/interfaces"></interfaces><switch "#
     ));
 }
 
 #[test]
 fn vlans_with_members() {
-    let xml = state_xml(&applied(), &BTreeMap::new());
+    let xml = state_xml(&applied(), &BTreeMap::new(), None);
     assert!(xml.contains(
         r#"<switch xmlns="urn:github:albrechtl:clixon-switch"><state><vlan-mode>DOT1Q</vlan-mode></state></switch>"#
     ));
@@ -120,7 +121,7 @@ fn port_based_groups() {
         },
     )]);
     applied.ports.insert("lan2".into(), Port::access(1));
-    let xml = state_xml(&applied, &BTreeMap::new());
+    let xml = state_xml(&applied, &BTreeMap::new(), None);
     assert!(xml.contains("<vlan-mode>PORT_BASED</vlan-mode>"));
     assert!(xml.contains(
         r#"<port-based-vlans xmlns="urn:github:albrechtl:clixon-switch"><group><id>1</id><state><id>1</id><name>office</name><port>lan1</port><port>lan2</port></state></group></port-based-vlans>"#
@@ -156,7 +157,11 @@ fn svi_addresses_and_dhcp_lease() {
         dhcp_lease: Some(lease),
         ..up(None)
     };
-    let xml = state_xml(&applied, &BTreeMap::from([("vlan1".to_string(), vlan1)]));
+    let xml = state_xml(
+        &applied,
+        &BTreeMap::from([("vlan1".to_string(), vlan1)]),
+        None,
+    );
 
     assert!(xml.contains(
         r#"<routed-vlan xmlns="http://openconfig.net/yang/vlan"><ipv4 xmlns="http://openconfig.net/yang/interfaces/ip"><addresses>"#
@@ -178,7 +183,11 @@ fn no_lease_without_dhcp_client() {
         dhcp_lease: Some(DhcpLease::default()),
         ..up(None)
     };
-    let xml = state_xml(&applied(), &BTreeMap::from([("vlan1".to_string(), vlan1)]));
+    let xml = state_xml(
+        &applied(),
+        &BTreeMap::from([("vlan1".to_string(), vlan1)]),
+        None,
+    );
     assert!(xml.contains("<addresses></addresses><state><dhcp-client>false</dhcp-client></state>"));
     assert!(!xml.contains("dhcp-lease"));
 }
@@ -188,6 +197,7 @@ fn ports_have_no_ipv4_state() {
     let xml = state_xml(
         &applied(),
         &BTreeMap::from([("lan1".to_string(), up(None))]),
+        None,
     );
     assert!(!xml.contains("routed-vlan"));
 }

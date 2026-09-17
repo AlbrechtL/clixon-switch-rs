@@ -7,8 +7,8 @@
 A [clixon](https://www.clicon.org/) backend plugin, written in Rust, that
 applies an OpenConfig switch configuration to the Linux kernel: DSA switch
 ports in one VLAN-aware bridge, as 802.1Q access and trunk ports or in
-port-based VLAN groups, and routed VLAN interfaces with static IPv4
-addresses or a DHCP client.
+port-based VLAN groups, routed VLAN interfaces with static IPv4
+addresses or a DHCP client, and spanning tree (STP, RSTP, MSTP) with mstpd.
 
 clixon provides the datastores, the CLI, NETCONF and RESTCONF. This plugin
 validates each commit and reconciles the kernel over netlink. It was written
@@ -23,7 +23,8 @@ but nothing in it is specific to that board.
 | `openconfig-interfaces` | `interface[name]/config/{type,enabled}` |
 | `openconfig-vlan` | switch ports: `ethernet/switched-vlan/config/{interface-mode,access-vlan,native-vlan,trunk-vlans}`; routed VLANs: `routed-vlan/config/vlan` (id or name) |
 | `openconfig-if-ip` | `routed-vlan/ipv4/addresses/address[ip]/config/prefix-length`; `routed-vlan/ipv4/config/dhcp-client` |
-| `clixon-switch` | `vlans/vlan[vlan-id]/config/{name,status}` (the `vlan-top` grouping of `openconfig-vlan`); `switch/config/vlan-mode`; `port-based-vlans/group[id]/config/{name,port}`; state only: `routed-vlan/ipv4/state/dhcp-lease` |
+| `openconfig-spanning-tree` | `stp/global/config/{enabled-protocol,bpdu-guard,bpdu-filter}`; `stp/rstp/config/{hello-time,max-age,forwarding-delay,hold-count,bridge-priority}` and `stp/rstp/interfaces`; `stp/mstp/config/{name,revision,max-hop,...timers}`, `stp/mstp/mst-instances/mst-instance[mst-id]/config/{vlan,bridge-priority}` and its `interfaces`; `stp/interfaces/interface[name]/config/{edge-port,link-type,guard,bpdu-guard,bpdu-filter}` |
+| `clixon-switch` | `vlans/vlan[vlan-id]/config/{name,status}` (the `vlan-top` grouping of `openconfig-vlan`); `switch/config/vlan-mode`; `port-based-vlans/group[id]/config/{name,port}`; identity `STP`; the MSTP CIST: `stp/mstp/config/bridge-priority`, `stp/mstp/interfaces`; state only: `routed-vlan/ipv4/state/dhcp-lease`, `stp/mstp/state` of the CIST |
 
 The switch runs in one of two VLAN modes, `switch/config/vlan-mode`:
 
@@ -93,6 +94,9 @@ entry's state recreates it without its `config`.
 | switch port not configured | taken out of `br-lan`, down |
 | `l3ipvlan` interface on VLAN or group N | 802.1Q link on `br-lan` with id N, `bridge vlan add dev br-lan vid N self`, its addresses |
 | `ipv4/config/dhcp-client true` | `udhcpc` on that interface, a child of `clixon_backend` |
+| (always) | `br-lan` with `mst_enabled 1`: per-VLAN spanning tree states |
+| `stp/global/config/enabled-protocol` set | `mstpd` a child of `clixon_backend`, `br-lan` `stp_state` 1 before ports join, mstpd configured with `mstpctl` |
+| MSTI with `vlan` | `bridge vlan global set vid V msti M`, and the ports' MSTI states, programmed by the patched mstpd |
 
 A port's new PVID entry is added before its other entries change, so the port
 never drops untagged frames while its native VLAN moves. The rtl83xx DSA
@@ -127,6 +131,72 @@ udhcpc sends the host name and releases the lease when the client is
 stopped. A backend that starts stops any udhcpc a previous one left behind
 (pid files in `CLICON_XMLDB_DIR`).
 
+### Spanning tree
+
+Spanning tree is off in the factory default. `stp/global/config/enabled-protocol`
+turns it on, with one of:
+
+- `openconfig-spanning-tree-types:RSTP`, configured in `stp/rstp`.
+- `openconfig-spanning-tree-types:MSTP`, configured in `stp/mstp`: the region
+  (`name`, `revision`), `max-hop`, the timers and the MSTIs. OpenConfig has
+  no place for the CIST's bridge priority and port settings, so
+  `clixon-switch` adds `bridge-priority` to `stp/mstp/config` and an
+  `interfaces` list to `stp/mstp`, built from OpenConfig's own groupings.
+- `clixon-switch:STP`, IEEE 802.1D STP, configured in `stp/rstp` like RSTP.
+  OpenConfig has no identity for it; `clixon-switch` derives one from
+  `oc-stp-types:STP_PROTOCOL`.
+
+To turn on RSTP, with a lower bridge priority and `lan8` as edge port
+(`/stp` does not exist before, so the PATCH goes to the datastore):
+
+```sh
+curl -X PATCH -H 'Content-Type: application/yang-data+json' \
+  -d '{"ietf-restconf:data":{"openconfig-spanning-tree:stp":{
+        "global":{"config":{"enabled-protocol":["openconfig-spanning-tree-types:RSTP"]}},
+        "rstp":{"config":{"bridge-priority":4096}},
+        "interfaces":{"interface":[{"name":"lan8","config":{"name":"lan8",
+          "edge-port":"openconfig-spanning-tree-types:EDGE_ENABLE"}}]}}}}' \
+  http://192.168.1.1/restconf/data
+```
+
+RSTP and MSTP fall back to STP on a port with an 802.1D neighbour by
+themselves. Only one protocol may be enabled. The container of the protocol not
+in use may keep its configuration; it is validated but has no effect.
+
+Every switch port takes part. `stp/*/interfaces` entries only change a
+port's cost and priority, `stp/interfaces` its edge mode (default
+`EDGE_AUTO`), link type (default detected), `guard ROOT`, BPDU guard and BPDU
+filter; `stp/global/config` sets the latter two for all ports. The values
+must be what 802.1D encodes: bridge priorities in steps of 4096, port
+priorities in steps of 16, `hello-time` 2 (mstpd supports no other),
+`2 * (forwarding-delay - 1) >= max-age`, `max-hop` 6..40. An MSTI's `vlan`
+list (ids and ranges `x..y`) counts as configured, declared or not, because
+the MST configuration digest must match the other bridges of the region; a
+VLAN belongs to at most one MSTI. Not implemented, and rejected: rapid PVST,
+loop guard, bridge assurance, EtherChannel guard, BPDU guard recovery.
+
+A commit that enables spanning tree starts `mstpd` (in the foreground, logging
+to syslog) before it touches the kernel, sets `stp_state` on `br-lan` so the
+kernel runs `/sbin/bridge-stp`, which leaves spanning tree to userspace
+(`scripts/bridge-stp.sh`), and configures mstpd with `mstpctl`. It only runs
+the `mstpctl` commands whose values changed, and all of them after mstpd or
+the bridge was restarted or ports joined. Turning spanning tree off removes
+the bridge from mstpd, which maps all VLANs back to the CIST, and stops it.
+A backend that starts stops any mstpd a previous one left behind.
+
+Plain mstpd computes MSTI states but only applies the CIST's. The mstpd of
+[meta-ethernet-switch-os](https://github.com/AlbrechtL/meta-ethernet-switch-os)
+carries a patch that programs the kernel's
+per-VLAN spanning tree: `br-lan` always has `mst_enabled`, which can only be
+switched while no port has VLANs, and mstpd maps VLANs to MSTIs and sets the
+ports' MSTI states, again whenever the kernel reports a VLAN change. The
+rtl83xx DSA driver offloads both.
+
+State data comes from `mstpctl -f json`: bridge and root identifiers, root
+port and cost, topology changes; per port the role, state, designated bridge
+and port, forward transitions and BPDU counters. mstpd reports RSTP states:
+`discarding` shows as `BLOCKING`.
+
 State data shows each address with its `origin` (`STATIC` or `DHCP`),
 `ipv4/state/dhcp-client`, and, since OpenConfig does not model the lease,
 the `clixon-switch:dhcp-lease` container: address, routers, DNS servers,
@@ -157,13 +227,13 @@ default.
 | Path | Content |
 |---|---|
 | `crates/switch-model` | RFC 7951 JSON → validated `DesiredState`; state data XML. Pure, host-tested. |
-| `crates/switch-net` | `ActualState`, the planner, `reconcile`, the netlink backend and a kernel-like fake for tests |
+| `crates/switch-net` | `ActualState`, the planner, `reconcile`, the netlink backend and a kernel-like fake for tests; the DHCP client and mstpd |
 | `crates/clixon-sys` | hand-written declarations for the libclixon 7.8 subset in use |
 | `crates/clixon-plugin` | safe plugin interface: callbacks, panics caught, logging, transactions |
 | `crates/clixon-switch-plugin` | the cdylib clixon loads |
 | `clixon/` | `clixon.xml` template, `autocli.xml`, CLI spec |
-| `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, YANG vendoring |
-| `dev/` | development container with clixon at the Yocto recipes' revisions |
+| `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, `/sbin/bridge-stp`, YANG vendoring |
+| `dev/` | development container with clixon at the Yocto recipes' revisions, and mstpd with the layer's patches |
 | `tests/integration/` | RESTCONF tests against clixon in the container |
 
 ## Development
@@ -177,8 +247,18 @@ default.
 
 2. **Integration tests, in a container.** The container runs clixon with the
    plugin on dummy links `lan1`..`lan7` and a veth `lan8` with a busybox
-   DHCP server at its other end, in its own network namespace. The tests
-   drive RESTCONF and check the kernel with `ip` and `bridge`.
+   DHCP server at its other end, in its own network namespace, and mstpd with
+   the layer's patches. The tests drive RESTCONF and check the kernel with
+   `ip` and `bridge`.
+
+   Spanning tree cannot converge there: the kernel only hands spanning tree
+   to userspace for bridges in the host's network namespace, and a bridge
+   without it forwards BPDUs instead of passing them to mstpd.
+   `CLIXON_SWITCH_STP_IN_NETNS` makes the plugin leave `stp_state` alone, so
+   the tests still cover mstpd's configuration, state data and the kernel's
+   per-VLAN states. Loops have to be tested on the switch. The container
+   needs `CAP_SYS_ADMIN`, because mstpd answers mstpctl with the client's
+   credentials attached.
 
    ```sh
    dev/container.sh tests/integration/run.sh

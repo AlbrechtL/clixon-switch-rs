@@ -11,13 +11,16 @@ module clixon-switch {
   import openconfig-vlan-types { prefix oc-vlan-types; }
   import openconfig-if-ip { prefix oc-ip; }
   import openconfig-inet-types { prefix oc-inet; }
+  import openconfig-spanning-tree { prefix oc-stp; }
+  import openconfig-spanning-tree-types { prefix oc-stp-types; }
 
   organization "clixon-switch-rs";
   contact "https://github.com/AlbrechtL/clixon-switch-rs";
   description
     "Top-level module of the clixon-switch backend: switch ports in one
      VLAN-aware bridge, and routed VLAN interfaces with static IPv4
-     addresses or a DHCP client, as modelled by OpenConfig.
+     addresses or a DHCP client, and spanning tree (STP, RSTP, MSTP), as
+     modelled by OpenConfig.
 
      The switch runs in one of two VLAN modes (switch/config/vlan-mode):
      DOT1Q, with the VLANs declared in vlans and access or trunk ports; or
@@ -32,7 +35,9 @@ module clixon-switch {
   revision 2026-09-16 {
     description
       "VLAN database, trunk ports, VLAN mode and port-based VLAN groups.
-       State of the DHCP client's lease.";
+       State of the DHCP client's lease.
+       Spanning tree: identity STP, and the CIST's bridge priority and
+       ports in MSTP.";
   }
   revision 2026-09-15 {
     description "Initial revision.";
@@ -163,5 +168,34 @@ module clixon-switch {
         description "Time until the leased address expires.";
       }
     }
+  }
+
+  // Spanning tree. OpenConfig has identities for RSTP, MSTP and RAPID_PVST
+  // only.
+  identity STP {
+    base oc-stp-types:STP_PROTOCOL;
+    description
+      "Spanning Tree Protocol, as in IEEE 802.1D-1998. Configured in
+       /stp/rstp like RSTP; the bridge sends STP BPDUs only.";
+    reference "IEEE 802.1D-1998 8";
+  }
+
+  // In MSTP, OpenConfig models the MSTIs (mst-id 1..4094) but not the CIST:
+  // neither its bridge priority nor its port costs and priorities. These use
+  // OpenConfig's own groupings.
+  augment "/oc-stp:stp/oc-stp:mstp/oc-stp:config" {
+    description "Bridge priority of the CIST.";
+    uses oc-stp:bridge-priority-config;
+  }
+
+  augment "/oc-stp:stp/oc-stp:mstp/oc-stp:state" {
+    description "Bridge priority and state of the CIST.";
+    uses oc-stp:bridge-priority-config;
+    uses oc-stp:stp-common-state;
+  }
+
+  augment "/oc-stp:stp/oc-stp:mstp" {
+    description "Port settings and state of the CIST.";
+    uses oc-stp:stp-interfaces-top;
   }
 }

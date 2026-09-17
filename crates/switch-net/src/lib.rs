@@ -18,6 +18,8 @@ use std::fmt;
 pub use plan::plan;
 pub use switch_model::{DesiredState, Ipv4Prefix, BRIDGE_NAME};
 
+pub mod stp;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LinkKind {
     /// DSA user port, i.e. a front port of the switch.
@@ -27,6 +29,9 @@ pub enum LinkKind {
     Bridge {
         vlan_filtering: bool,
         default_pvid: u16,
+        /// Per-VLAN spanning tree states (IFLA_BR_MULTI_BOOLOPT mst_enable).
+        mst_enabled: bool,
+        stp: BridgeStp,
     },
     Vlan {
         parent: String,
@@ -41,6 +46,17 @@ pub struct Link {
     /// Administrative state (IFF_UP).
     pub up: bool,
     pub master: Option<String>,
+}
+
+/// IFLA_BR_STP_STATE.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BridgeStp {
+    Off,
+    /// The kernel's own STP: the kernel falls back to it when
+    /// /sbin/bridge-stp is missing or fails.
+    Kernel,
+    /// Spanning tree in userspace, here mstpd.
+    User,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,13 +114,21 @@ impl ActualState {
 /// One kernel change. Display gives the iproute2 equivalent, for logs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
-    /// A bridge with vlan_filtering 1 and vlan_default_pvid 0, down.
+    /// A bridge with vlan_filtering 1, vlan_default_pvid 0 and mst_enable 1,
+    /// down.
     CreateBridge {
         name: String,
     },
-    /// Sets vlan_filtering 1 and vlan_default_pvid 0 on an existing bridge.
+    /// Sets vlan_filtering 1, vlan_default_pvid 0 and mst_enable 1 on an
+    /// existing bridge. The kernel refuses mst_enable while a port has VLANs.
     ConfigureBridge {
         name: String,
+    },
+    /// Turns spanning tree on (stp_state 1) or off. On, the kernel runs
+    /// /sbin/bridge-stp, which leaves spanning tree to mstpd.
+    SetBridgeStp {
+        name: String,
+        on: bool,
     },
     DeleteLink {
         name: String,
@@ -150,11 +174,16 @@ impl fmt::Display for Op {
         match self {
             Op::CreateBridge { name } => write!(
                 f,
-                "ip link add {name} type bridge vlan_filtering 1 vlan_default_pvid 0"
+                "ip link add {name} type bridge vlan_filtering 1 vlan_default_pvid 0 mst_enabled 1"
             ),
             Op::ConfigureBridge { name } => write!(
                 f,
-                "ip link set {name} type bridge vlan_filtering 1 vlan_default_pvid 0"
+                "ip link set {name} type bridge vlan_filtering 1 vlan_default_pvid 0 mst_enabled 1"
+            ),
+            Op::SetBridgeStp { name, on } => write!(
+                f,
+                "ip link set {name} type bridge stp_state {}",
+                u8::from(*on)
             ),
             Op::DeleteLink { name } => write!(f, "ip link del {name}"),
             Op::CreateVlan { name, parent, id } => {
