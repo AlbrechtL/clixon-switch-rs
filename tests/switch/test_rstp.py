@@ -46,7 +46,8 @@ def test_mstpd_runs_the_configured_protocol_and_timers(rstp):
     assert bridge["force-protocol-version"] == "rstp"
     # The bridge id's first nibble is the priority in units of 4096.
     assert bridge["bridge-id"][:1] == "1"
-    assert (bridge["bridge-max-age"], bridge["bridge-forward-delay"]) == (24, 18)
+    # mstpctl's JSON quotes every value, timers included.
+    assert (bridge["bridge-max-age"], bridge["bridge-forward-delay"]) == ("24", "18")
 
 
 def test_mstpd_manages_every_port(rstp):
