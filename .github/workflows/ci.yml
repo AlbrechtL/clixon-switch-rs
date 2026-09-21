@@ -51,6 +51,8 @@ jobs:
           diff -r yang/mib /tmp/mib-check/yang/mib
 
       # Builds clixon at the revisions the Yocto recipes pin, runs it with the
-      # plugin against dummy ports, and drives it over RESTCONF.
+      # plugin against dummy ports, and drives it over RESTCONF. Spanning tree
+      # needs a kernel with the bridge's stp_mode (Linux 7.1); without one
+      # those tests skip, which the summary reports.
       - name: Integration tests
-        run: dev/container.sh tests/integration/run.sh
+        run: dev/container.sh python3 -m pytest tests/switch -v

@@ -4,7 +4,8 @@
 # namespace.
 #
 #   dev/container.sh              shell, clixon running (clixon_cli, curl :8080)
-#   dev/container.sh <command>    runs <command> instead, e.g. tests/integration/run.sh
+#   dev/container.sh <command>    runs <command> instead, e.g.
+#                                 python3 -m pytest tests/switch
 #
 # The repository is mounted read-only; build output lives in a volume.
 #
@@ -24,6 +25,9 @@ tty=""
 [ -t 0 ] && tty="-it"
 
 exec docker run --rm $tty \
+    `# An init that reaps: the tests restart clixon_backend, and whatever` \
+    `# runs them is not necessarily waiting for it.` \
+    --init \
     --cap-add NET_ADMIN \
     `# mstpd answers mstpctl with the client's SCM_CREDENTIALS attached, which` \
     `# the kernel only allows with CAP_SYS_ADMIN.` \

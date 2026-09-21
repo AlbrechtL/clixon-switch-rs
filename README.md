@@ -101,7 +101,7 @@ entry's state recreates it without its `config`.
 | `l3ipvlan` interface on VLAN or group N | 802.1Q link on `br-lan` with id N, `bridge vlan add dev br-lan vid N self`, its addresses |
 | `ipv4/config/dhcp-client true` | `udhcpc` on that interface, a child of `clixon_backend` |
 | (always) | `br-lan` with `mst_enabled 1`: per-VLAN spanning tree states |
-| `stp/global/config/enabled-protocol` set | `mstpd` a child of `clixon_backend`, `br-lan` `stp_state` 1 before ports join, mstpd configured with `mstpctl` |
+| `stp/global/config/enabled-protocol` set | `mstpd` a child of `clixon_backend`, `br-lan` in userspace spanning tree (`stp_mode`, else `stp_state`) before ports join, mstpd configured with `mstpctl` |
 | MSTI with `vlan` | `bridge vlan global set vid V msti M`, and the ports' MSTI states, programmed by the patched mstpd |
 | `snmp/engine/enabled true` | `snmpd` and `clixon_snmp`, children of `clixon_backend`; `snmpd.conf` in `CLICON_XMLDB_DIR` |
 
@@ -183,9 +183,12 @@ VLAN belongs to at most one MSTI. Not implemented, and rejected: rapid PVST,
 loop guard, bridge assurance, EtherChannel guard, BPDU guard recovery.
 
 A commit that enables spanning tree starts `mstpd` (in the foreground, logging
-to syslog) before it touches the kernel, sets `stp_state` on `br-lan` so the
-kernel runs `/sbin/bridge-stp`, which leaves spanning tree to userspace
-(`scripts/bridge-stp.sh`), and configures mstpd with `mstpctl`. It only runs
+to syslog) before it touches the kernel, asks `br-lan` for spanning tree in
+userspace, and configures mstpd with `mstpctl`. It asks two ways, because the
+kernel reports only which of them it ended up with: the bridge's `stp_mode`
+(Linux 7.1), which works in any network namespace, and otherwise `stp_state`,
+which makes the kernel run `/sbin/bridge-stp` (`scripts/bridge-stp.sh`) for
+bridges in the host's network namespace. It only runs
 the `mstpctl` commands whose values changed, and all of them after mstpd or
 the bridge was restarted or ports joined. Turning spanning tree off removes
 the bridge from mstpd, which maps all VLANs back to the CIST, and stops it.
@@ -360,7 +363,7 @@ default.
 | `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, `/sbin/bridge-stp`, YANG vendoring, MIB translation, `snmp-localize-key` |
 | `yang/` | the main module; `vendor/` imported modules; `mib/` MIBs translated to YANG |
 | `dev/` | development container with clixon and mstpd at the Yocto recipes' revisions and with the layer's patches, net-snmp, smidump |
-| `tests/integration/` | RESTCONF tests against clixon in the container |
+| `tests/` | pytest suites: `switch/` drives one switch in the container, `lib/` is shared |
 
 ## Development
 
@@ -377,17 +380,18 @@ default.
    snmpd. The tests drive RESTCONF and check the kernel with `ip` and
    `bridge`, and SNMP with net-snmp's `snmpget` and `snmpwalk`.
 
-   Spanning tree cannot converge there: the kernel only hands spanning tree
-   to userspace for bridges in the host's network namespace, and a bridge
-   without it forwards BPDUs instead of passing them to mstpd.
-   `CLIXON_SWITCH_STP_IN_NETNS` makes the plugin leave `stp_state` alone, so
-   the tests still cover mstpd's configuration, state data and the kernel's
-   per-VLAN states. Loops have to be tested on the switch. The container
-   needs `CAP_SYS_ADMIN`, because mstpd answers mstpctl with the client's
-   credentials attached.
+   Spanning tree needs **Linux 7.1** in a container. A bridge only passes
+   BPDUs up to mstpd once the kernel has left spanning tree to userspace,
+   and it asks `/sbin/bridge-stp` about that only for bridges in the host's
+   network namespace. Linux 7.1 added the bridge's `stp_mode`, which says so
+   outright and works in any namespace; the plugin asks for it and falls
+   back to the helper. On an older kernel the bridge keeps the kernel's own
+   spanning tree, switching it on fails, and loops have to be tested on the
+   switch. The container needs `CAP_SYS_ADMIN`, because mstpd answers
+   mstpctl with the client's credentials attached.
 
    ```sh
-   dev/container.sh tests/integration/run.sh
+   dev/container.sh python3 -m pytest tests/switch
    dev/container.sh            # shell: clixon_cli -f /usr/local/etc/clixon.xml, curl localhost:8080
    ```
 

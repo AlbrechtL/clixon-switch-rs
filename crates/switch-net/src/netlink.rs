@@ -15,9 +15,9 @@ use netlink_packet_route::address::{
     AddressAttribute, AddressFlags, AddressHeaderFlags, AddressMessage,
 };
 use netlink_packet_route::link::{
-    AfSpecBridge, BridgeBooleanOptionFlags, BridgeBooleanOptions, BridgeFlag, BridgeStpState,
-    BridgeVlanInfo, BridgeVlanInfoFlags, InfoBridge, InfoData, InfoDsa, InfoKind, InfoVlan,
-    LinkAttribute, LinkExtentMask, LinkFlags, LinkInfo, LinkMessage, State,
+    AfSpecBridge, BridgeBooleanOptionFlags, BridgeBooleanOptions, BridgeFlag, BridgeStpMode,
+    BridgeStpState, BridgeVlanInfo, BridgeVlanInfoFlags, InfoBridge, InfoData, InfoDsa, InfoKind,
+    InfoVlan, LinkAttribute, LinkExtentMask, LinkFlags, LinkInfo, LinkMessage, State,
 };
 use netlink_packet_route::neighbour::{
     NeighbourAttribute, NeighbourFlags, NeighbourMessage, NeighbourState,
@@ -32,10 +32,6 @@ pub struct NetlinkBackend {
     socket: Socket,
     seq: u32,
     ports: Option<BTreeSet<String>>,
-    /// See [`NetlinkBackend::stp_in_netns`].
-    stp_in_netns: bool,
-    /// Bridges with spanning tree switched on, while `stp_in_netns`.
-    stp_bridges: BTreeSet<String>,
 }
 
 fn io_error(context: &'static str) -> impl Fn(io::Error) -> Error {
@@ -55,19 +51,7 @@ impl NetlinkBackend {
             socket,
             seq: 0,
             ports,
-            stp_in_netns: false,
-            stp_bridges: BTreeSet::new(),
         })
-    }
-
-    /// For test setups in a network namespace other than the host's, where
-    /// the kernel never leaves spanning tree to userspace: switching it on
-    /// leaves stp_state 0, and the bridge is reported as if mstpd had it.
-    /// mstpd still configures the bridge and sets port states, but the
-    /// bridge forwards BPDUs instead of passing them up, so spanning tree
-    /// does not converge.
-    pub fn stp_in_netns(&mut self) {
-        self.stp_in_netns = true;
     }
 
     /// Sends one request and collects the replies up to the final DONE (for
@@ -208,14 +192,18 @@ impl NetlinkBackend {
         )
     }
 
-    fn set_stp_state(&mut self, bridge: &str, state: BridgeStpState) -> Result<()> {
+    fn set_bridge_info(&mut self, bridge: &str, data: Vec<InfoBridge>) -> Result<()> {
         let mut message = LinkMessage::default();
         message.header.index = self.index(bridge)?;
         message.attributes = vec![LinkAttribute::LinkInfo(vec![
             LinkInfo::Kind(InfoKind::Bridge),
-            LinkInfo::Data(InfoData::Bridge(vec![InfoBridge::StpState(state)])),
+            LinkInfo::Data(InfoData::Bridge(data)),
         ])];
         self.modify(RouteNetlinkMessage::NewLink(message), 0)
+    }
+
+    fn set_stp_state(&mut self, bridge: &str, state: BridgeStpState) -> Result<()> {
+        self.set_bridge_info(bridge, vec![InfoBridge::StpState(state)])
     }
 
     /// Operational state of every link, by name.
@@ -336,11 +324,6 @@ impl NetBackend for NetlinkBackend {
                 continue;
             };
             let mut kind = link_kind(message, &names);
-            if let LinkKind::Bridge { stp, .. } = &mut kind {
-                if self.stp_in_netns && self.stp_bridges.contains(name) {
-                    *stp = BridgeStp::User;
-                }
-            }
             if let Some(ports) = &self.ports {
                 kind = match kind {
                     LinkKind::Dsa { .. } if !ports.contains(name) => LinkKind::Other,
@@ -466,20 +449,26 @@ impl NetBackend for NetlinkBackend {
                 message.attributes = vec![bridge_info()];
                 self.modify(RouteNetlinkMessage::NewLink(message), 0)
             }
-            Op::SetBridgeStp { name, on } if self.stp_in_netns => {
-                match on {
-                    true => self.stp_bridges.insert(name.clone()),
-                    false => self.stp_bridges.remove(name),
-                };
-                Ok(())
-            }
             Op::SetBridgeStp { name, on: false } => {
                 self.set_stp_state(name, BridgeStpState::Disabled)
             }
             Op::SetBridgeStp { name, on: true } => {
-                // Requests spanning tree. The kernel asks /sbin/bridge-stp,
-                // and runs its own STP (stp_state 1) unless that succeeds, or
-                // leaves it to userspace (stp_state 2).
+                // Asks for spanning tree in userspace twice over, because the
+                // kernel reports only which of the two it ended up with.
+                //
+                // stp_mode (Linux 7.1) says so outright, in any network
+                // namespace. It may only change while spanning tree is off,
+                // which is why the same message switches it off. Older
+                // kernels ignore the attribute and fall back to asking
+                // /sbin/bridge-stp, which they run only for bridges in the
+                // host's network namespace.
+                self.set_bridge_info(
+                    name,
+                    vec![
+                        InfoBridge::StpMode(BridgeStpMode::User),
+                        InfoBridge::StpState(BridgeStpState::Disabled),
+                    ],
+                )?;
                 self.set_stp_state(name, BridgeStpState::KernelStp)?;
                 let kernel_stp = self
                     .dump_links(AddressFamily::Unspec, vec![])?
@@ -497,13 +486,15 @@ impl NetBackend for NetlinkBackend {
                 if kernel_stp {
                     self.set_stp_state(name, BridgeStpState::Disabled)?;
                     return Err(Error(
-                        "the kernel did not leave spanning tree to mstpd: /sbin/bridge-stp is missing or failed".into(),
+                        "the kernel did not leave spanning tree to mstpd: it is older than \
+                         Linux 7.1, and /sbin/bridge-stp is missing, failed, or the bridge is \
+                         not in the host's network namespace"
+                            .into(),
                     ));
                 }
                 Ok(())
             }
             Op::DeleteLink { name } => {
-                self.stp_bridges.remove(name);
                 let mut message = LinkMessage::default();
                 message.header.index = self.index(name)?;
                 self.modify(RouteNetlinkMessage::DelLink(message), 0)

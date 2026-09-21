@@ -62,3 +62,10 @@ RUN groupadd --system clicon \
     && useradd --system --gid clicon --no-create-home --shell /bin/false clicon
 
 RUN rustup component add clippy rustfmt
+
+# The integration tests (tests/), in a layer of their own so that changing
+# them does not rebuild clixon.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       python3 python3-pytest python3-requests \
+    && rm -rf /var/lib/apt/lists/*

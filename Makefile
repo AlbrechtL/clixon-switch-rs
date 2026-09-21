@@ -1,8 +1,9 @@
 # Installs the plugin with its YANG, clixon configuration, factory
 # default and the web UI (www/, served by clixon_restconf). The plugin is
 # built by cargo; PLUGIN points at the library.
-# The kernel runs /sbin/bridge-stp, outside PREFIX: link it to
-# LIBDIR/clixon-switch/bridge-stp.
+# Before Linux 7.1, which has the bridge's stp_mode, the kernel runs
+# /sbin/bridge-stp to be told to leave spanning tree to mstpd. It lives
+# outside PREFIX: link it to LIBDIR/clixon-switch/bridge-stp.
 #
 #   cargo build --release
 #   make install DESTDIR=... PREFIX=/usr SYSCONFDIR=/etc LOCALSTATEDIR=/var

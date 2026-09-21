@@ -40,9 +40,8 @@ touch /tmp/udhcpd.leases
 busybox udhcpd -S /tmp/udhcpd.conf
 
 export CLIXON_SWITCH_PORTS="$PORTS"
-# The kernel runs /sbin/bridge-stp only for bridges in the host's network
-# namespace; here it would use its own STP.
-export CLIXON_SWITCH_STP_IN_NETNS=1
+# The repository is mounted read-only: keep pytest's bytecode out of it.
+export PYTHONPYCACHEPREFIX=/tmp/pycache
 # Docker manages /etc/resolv.conf.
 export RESOLV_CONF=/tmp/resolv.conf
 # snmpd's engineBoots, on flash on the switch.

@@ -39,10 +39,6 @@ const UDHCPC_ENV: &str = "CLIXON_SWITCH_UDHCPC";
 /// The resolv.conf the DHCP client writes, instead of /etc/resolv.conf.
 const RESOLV_CONF_ENV: &str = "RESOLV_CONF";
 
-/// Set in a network namespace other than the host's, where the kernel does
-/// not leave spanning tree to mstpd (see `NetlinkBackend::stp_in_netns`).
-const STP_IN_NETNS_ENV: &str = "CLIXON_SWITCH_STP_IN_NETNS";
-
 /// The mstpd and mstpctl binaries, instead of those in PATH.
 const MSTPD_ENV: &str = "CLIXON_SWITCH_MSTPD";
 const MSTPCTL_ENV: &str = "CLIXON_SWITCH_MSTPCTL";
@@ -181,14 +177,7 @@ impl SwitchPlugin {
             mstpd: binary(MSTPD_ENV, "mstpd"),
             mstpctl: binary(MSTPCTL_ENV, "mstpctl"),
         };
-        let mut net = NetlinkBackend::new(ports)?;
-        if std::env::var_os(STP_IN_NETNS_ENV).is_some() {
-            h.log(
-                Level::Notice,
-                &format!("{STP_IN_NETNS_ENV}: spanning tree without stp_state, for tests only"),
-            );
-            net.stp_in_netns();
-        }
+        let net = NetlinkBackend::new(ports)?;
         Ok(SwitchPlugin {
             net,
             mstpd: Mstpd::new(mstpd_config, ChildProcesses::default(), CommandControl),
