@@ -41,11 +41,14 @@
   <CLICON_SNMP_MIB>Q-BRIDGE-MIB</CLICON_SNMP_MIB>
   <CLICON_SNMP_MIB>RSTP-MIB</CLICON_SNMP_MIB>
   <CLICON_SNMP_AGENT_SOCK>unix:@RUNSTATEDIR@/clixon-switch/agentx.sock</CLICON_SNMP_AGENT_SOCK>
-  <!-- The web UI: clixon_restconf serves the static files below / itself,
-       so the page is on the same origin as /restconf, which (with
-       /.well-known) is matched first. / is index.html. Symbolic links are
-       not followed. -->
-  <CLICON_HTTP_DATA_ROOT>@DATADIR@/clixon-switch/www</CLICON_HTTP_DATA_ROOT>
+  <!-- Static files: clixon_restconf serves whatever is installed at this
+       root below / itself, so a web UI is on the same origin as /restconf,
+       which (with /.well-known) is matched first. / is index.html. Symbolic
+       links are not followed. This repository ships no pages; the distro
+       does, and sets HTTP_DATA_ROOT accordingly (see the Makefile). The
+       directory has to exist: a missing one makes static-file requests
+       fail outright rather than answer 404. -->
+  <CLICON_HTTP_DATA_ROOT>@HTTP_DATA_ROOT@</CLICON_HTTP_DATA_ROOT>
   <restconf>
     <enable>true</enable>
     <!-- No authentication and no TLS: proof of concept only. -->

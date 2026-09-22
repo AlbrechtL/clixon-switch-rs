@@ -1,4 +1,4 @@
-"""The status page clixon_restconf serves from www/, and system state."""
+"""http-data serving and system state."""
 
 import pytest
 import requests
@@ -12,16 +12,9 @@ def web(switch):
     return switch.restconf.base.removesuffix("/restconf")
 
 
-@pytest.mark.parametrize(
-    "path, content_type",
-    [("/", "text/html"), ("/app.js", "application/javascript")],
-)
-def test_serves_the_web_ui(web, path, content_type):
-    response = requests.get(web + path, timeout=10)
-    assert response.status_code == 200
-    assert response.headers["content-type"] == content_type
-
-
+# This repository installs no pages, only the empty http-data root. That the
+# root exists is what makes this a 404 rather than an internal error:
+# clixon's http_data_check_file_path() resolves the root before the path.
 def test_serves_no_file_outside_the_web_root(web):
     assert requests.get(web + "/clixon.xml", timeout=10).status_code == 404
 

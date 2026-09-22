@@ -315,18 +315,22 @@ mac-address types, tables with augments, index leaves of other tables, and
 SMI defaults in state data. meta-ethernet-switch-os carries them as patches
 (`recipes-clixon/clixon/files`), and the dev container applies them.
 
-### System state and status page
+### System state and static files
 
 `/system/state` (`clixon-switch`) is state data: the contact and location
 of `/system/config`, host name, the firmware's `NAME` and `VERSION` from
 `/etc/os-release`, kernel release, clock, uptime, load averages and memory.
+It exists mainly for a status page to read.
 
-`clixon_restconf` serves `www/` at `/` (clixon's `http-data`, see
-`clixon.xml`): a read-only status page with the system state, the routed
-VLAN interfaces with their addresses and DHCP lease, the ports and the VLANs
-or port-based groups. It uses nothing but RESTCONF GETs on the same origin,
-refreshes every 5 seconds, and links to SWUpdate's web UI on port 8080.
-There is no authentication yet, like RESTCONF itself.
+`clixon_restconf` serves static files at `/` (clixon's `http-data`), on the
+same origin as `/restconf`, from `HTTP_DATA_ROOT` in `clixon.xml`. **This
+repository ships no pages**; `make install` only creates the directory,
+because clixon resolves the root before the request path and a missing one
+makes static-file requests fail outright instead of answering 404
+(`/restconf` is matched earlier and is unaffected). The distro provides the
+web UI and overrides `HTTP_DATA_ROOT`; for the switch that is
+[meta-ethernet-switch-os](https://github.com/AlbrechtL/meta-ethernet-switch-os),
+whose `ethernet-switch-os-webui` recipe installs a read-only status page.
 
 ```sh
 curl -H 'Accept: application/yang-data+json' \
@@ -359,7 +363,6 @@ default.
 | `crates/clixon-plugin` | safe plugin interface: callbacks, panics caught, logging, transactions |
 | `crates/clixon-switch-plugin` | the cdylib clixon loads |
 | `clixon/` | `clixon.xml` template, `autocli.xml`, CLI spec |
-| `www/` | the status page (plain HTML, CSS, JavaScript), served by `clixon_restconf` |
 | `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, `/sbin/bridge-stp`, YANG vendoring, MIB translation, `snmp-localize-key` |
 | `yang/` | the main module; `vendor/` imported modules; `mib/` MIBs translated to YANG |
 | `dev/` | development container with clixon and mstpd at the Yocto recipes' revisions and with the layer's patches, net-snmp, smidump |

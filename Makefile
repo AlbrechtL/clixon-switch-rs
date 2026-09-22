@@ -1,6 +1,5 @@
-# Installs the plugin with its YANG, clixon configuration, factory
-# default and the web UI (www/, served by clixon_restconf). The plugin is
-# built by cargo; PLUGIN points at the library.
+# Installs the plugin with its YANG, clixon configuration and factory
+# default. The plugin is built by cargo; PLUGIN points at the library.
 # Before Linux 7.1, which has the bridge's stp_mode, the kernel runs
 # /sbin/bridge-stp to be told to leave spanning tree to mstpd. It lives
 # outside PREFIX: link it to LIBDIR/clixon-switch/bridge-stp.
@@ -19,6 +18,13 @@ DATADIR ?= $(PREFIX)/share
 LOCALSTATEDIR ?= $(PREFIX)/var
 RUNSTATEDIR ?= $(LOCALSTATEDIR)/run
 RESTCONF_PORT ?= 80
+
+# Where clixon_restconf serves static files from (http-data). This repository
+# ships no pages; it only creates the directory, because clixon resolves the
+# root before the request path and a missing one makes every static-file
+# request fail outright instead of answering 404. A distro that has a web UI
+# overrides this and owns the directory itself.
+HTTP_DATA_ROOT ?= $(DATADIR)/$(APP)/www
 
 # Factory default: front ports and management address.
 LAN_PORTS ?= lan1 lan2 lan3 lan4 lan5 lan6 lan7 lan8
@@ -41,6 +47,7 @@ $(BUILDDIR)/clixon.xml: clixon/clixon.xml.in Makefile
 	    -e 's|@LOCALSTATEDIR@|$(LOCALSTATEDIR)|g' \
 	    -e 's|@RUNSTATEDIR@|$(RUNSTATEDIR)|g' \
 	    -e 's|@RESTCONF_PORT@|$(RESTCONF_PORT)|g' \
+	    -e 's|@HTTP_DATA_ROOT@|$(HTTP_DATA_ROOT)|g' \
 	    $< > $@
 
 $(BUILDDIR)/factory-default.xml: scripts/factory-default.sh Makefile
@@ -56,9 +63,7 @@ install: all
 	$(INSTALL) -D -m 0755 scripts/udhcpc-script.sh $(DESTDIR)$(LIBDIR)/$(APP)/udhcpc-script
 	$(INSTALL) -D -m 0755 scripts/bridge-stp.sh $(DESTDIR)$(LIBDIR)/$(APP)/bridge-stp
 	$(INSTALL) -D -m 0644 $(BUILDDIR)/factory-default.xml $(DESTDIR)$(DATADIR)/$(APP)/factory-default.xml
-	for f in www/*; do \
-	    $(INSTALL) -D -m 0644 "$$f" "$(DESTDIR)$(DATADIR)/$(APP)/$$f" || exit 1; \
-	done
+	$(INSTALL) -d $(DESTDIR)$(HTTP_DATA_ROOT)
 	cd yang && find . -name '*.yang' | sort | while read -r f; do \
 	    $(INSTALL) -D -m 0644 "$$f" "$(DESTDIR)$(DATADIR)/$(APP)/yang/$$f" || exit 1; \
 	done
