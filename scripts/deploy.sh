@@ -2,7 +2,9 @@
 # Runs the plugin from "devtool build clixon-switch" on a switch, from RAM:
 # nothing is written to flash, and a reboot returns to the installed version.
 #
-#   . oe-init-build-env        # sets BUILDDIR
+# Run it from a shell that has BUILDDIR set -- "make shell" in the
+# ethernet-switch-os build repository, or . oe-init-build-env:
+#
 #   devtool build clixon-switch
 #   scripts/deploy.sh [root@192.168.1.1]
 #

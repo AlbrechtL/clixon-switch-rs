@@ -4,6 +4,17 @@
 > the help of AI. It has not undergone thorough review or hardening, and
 > should not be assumed suitable for production use.
 
+Part of **Ethernet Switch OS**. The build lives in
+[ethernet-switch-os](https://github.com/AlbrechtL/ethernet-switch-os), which
+builds this plugin into a switch image with [kas](https://kas.readthedocs.io/).
+The other pieces are
+[meta-ethernet-switch-os](https://github.com/AlbrechtL/meta-ethernet-switch-os)
+(the distro and the recipe for this plugin),
+[meta-rtl83xx-bsp](https://github.com/AlbrechtL/meta-rtl83xx-bsp) (the
+hardware) and [rtl838x-qemu](https://github.com/AlbrechtL/rtl838x-qemu)
+(testing without hardware). Nothing in this repository is specific to any of
+them: the crates here build and test on their own.
+
 A [clixon](https://www.clicon.org/) backend plugin, written in Rust, that
 applies an OpenConfig switch configuration to the Linux kernel: DSA switch
 ports in one VLAN-aware bridge, as 802.1Q access and trunk ports or in
@@ -402,14 +413,26 @@ default.
    on GitHub (`LAYER_REV`, default master), or from a local checkout:
    `LAYER=~/src/.../meta-ethernet-switch-os dev/container.sh ...`.
 
-3. **On the switch.** Build with Yocto from a local checkout, then run the
-   plugin from RAM without flashing:
+3. **On the switch.** Build with Yocto from this checkout, then run the
+   plugin from RAM without flashing. The Yocto build is
+   [ethernet-switch-os](https://github.com/AlbrechtL/ethernet-switch-os) and
+   runs in a container, so this checkout has to be bound into it and the ssh
+   agent forwarded for `deploy.sh`:
 
    ```sh
-   devtool modify -n clixon-switch ~/src/clixon-switch-rs    # once
+   cd ~/src/ethernet-switch-os
+   ./kas-container --ssh-agent \
+       --runtime-args "-v $HOME/src/clixon-switch-rs:/clixon-switch-rs" \
+       shell kas/board/zyxel-gs1900-8-a1.yml:kas/opt/devtool.yml
+   devtool modify -n clixon-switch /clixon-switch-rs    # once
    devtool build clixon-switch
-   scripts/deploy.sh root@192.168.1.1
+   /clixon-switch-rs/scripts/deploy.sh root@192.168.1.1
    ```
+
+   `kas/opt/devtool.yml` keeps devtool's workspace in `bblayers.conf`, which
+   kas rewrites on every invocation. Without a checkout to bind,
+   `devtool modify clixon-switch` extracts the sources into the workspace
+   instead and needs neither the bind nor the `-n`.
 
    After changing `Cargo.lock`, regenerate the recipe's crate list with
    `bitbake -c update_crates clixon-switch`.
