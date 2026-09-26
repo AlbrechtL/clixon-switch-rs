@@ -88,7 +88,9 @@ their `must` checks. The modules in `yang/vendor` are the import closure
 copied from openconfig/public and, for `ietf-snmp` and `ietf-yang-smiv2`,
 from YangModels/yang by `scripts/vendor-yang.sh`. `yang/mib` holds the MIBs
 translated to YANG by `scripts/mib-to-yang.sh` (run it before
-`vendor-yang.sh`). `openconfig-if-ip` has to stay at 3.7.0 or older,
+`vendor-yang.sh`). `mib` holds the SMIv2 source MIBs the agent serves, with
+their imports, copied from libsmi by `scripts/vendor-mibs.sh`; `make
+install-mibs` installs them for publishing, not onto the switch. `openconfig-if-ip` has to stay at 3.7.0 or older,
 because later versions import `openconfig-network-instance` and with it
 BGP, IS-IS, MPLS and more. That is also why the VLAN database lives in
 `clixon-switch`: in OpenConfig, only `openconfig-network-instance` uses the

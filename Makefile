@@ -35,7 +35,7 @@ BUILDDIR ?= build
 
 INSTALL ?= install
 
-.PHONY: all install clean
+.PHONY: all install install-mibs clean
 
 all: $(BUILDDIR)/clixon.xml $(BUILDDIR)/factory-default.xml
 
@@ -68,6 +68,15 @@ install: all
 	    $(INSTALL) -D -m 0644 "$$f" "$(DESTDIR)$(DATADIR)/$(APP)/yang/$$f" || exit 1; \
 	done
 	$(INSTALL) -d $(DESTDIR)$(LOCALSTATEDIR)/lib/clixon/$(APP)
+
+# The SMIv2 MIBs the SNMP agent serves, for loading into an NMS. Not part of
+# install: the agent does not parse MIBs, they are published with the
+# firmware instead.
+install-mibs:
+	$(INSTALL) -D -m 0644 mib/MANIFEST $(DESTDIR)$(DATADIR)/$(APP)/mib/MANIFEST
+	for f in mib/*.txt; do \
+	    $(INSTALL) -m 0644 "$$f" "$(DESTDIR)$(DATADIR)/$(APP)/mib/" || exit 1; \
+	done
 
 clean:
 	rm -rf $(BUILDDIR)

@@ -1,0 +1,25 @@
+# libsmi 0.5.0 mibs, copied by scripts/vendor-mibs.sh
+# served by snmpd: SNMPv2-MIB IF-MIB SNMP-FRAMEWORK-MIB SNMP-MPD-MIB SNMP-USER-BASED-SM-MIB SNMP-VIEW-BASED-ACM-MIB
+# served by clixon_snmp: BRIDGE-MIB P-BRIDGE-MIB Q-BRIDGE-MIB RSTP-MIB
+# the others are imported by these
+BRIDGE-MIB.txt
+IANAifType-MIB.txt
+IF-MIB.txt
+P-BRIDGE-MIB.txt
+Q-BRIDGE-MIB.txt
+RFC-1212.txt
+RFC1155-SMI.txt
+RFC1213-MIB.txt
+RFC1271-MIB.txt
+RMON-MIB.txt
+RMON2-MIB.txt
+RSTP-MIB.txt
+SNMP-FRAMEWORK-MIB.txt
+SNMP-MPD-MIB.txt
+SNMP-USER-BASED-SM-MIB.txt
+SNMP-VIEW-BASED-ACM-MIB.txt
+SNMPv2-CONF.txt
+SNMPv2-MIB.txt
+SNMPv2-SMI.txt
+SNMPv2-TC.txt
+TOKEN-RING-RMON-MIB.txt
