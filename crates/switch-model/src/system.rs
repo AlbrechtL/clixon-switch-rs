@@ -19,6 +19,8 @@ pub struct SystemState {
     pub os_name: Option<String>,
     /// VERSION of os-release.
     pub os_version: Option<String>,
+    /// BUILD_ID of os-release.
+    pub os_build_id: Option<String>,
     /// /proc/sys/kernel/osrelease.
     pub kernel_release: Option<String>,
     /// Seconds since boot.
@@ -34,10 +36,20 @@ pub struct SystemState {
     pub current_time: Option<u64>,
 }
 
-/// NAME and VERSION of an os-release file.
-pub fn parse_os_release(text: &str) -> (Option<String>, Option<String>) {
-    let mut name = None;
-    let mut version = None;
+/// The fields of an os-release file the switch reports.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct OsRelease {
+    pub name: Option<String>,
+    /// The firmware version.
+    pub version: Option<String>,
+    /// The revision the firmware was built from. Once releases are tagged,
+    /// `version` is the tag and this is the only field naming the commit.
+    pub build_id: Option<String>,
+}
+
+/// NAME, VERSION and BUILD_ID of an os-release file.
+pub fn parse_os_release(text: &str) -> OsRelease {
+    let mut release = OsRelease::default();
     for line in text.lines() {
         let Some((key, value)) = line.split_once('=') else {
             continue;
@@ -49,12 +61,13 @@ pub fn parse_os_release(text: &str) -> (Option<String>, Option<String>) {
             .unwrap_or(value)
             .to_string();
         match key.trim() {
-            "NAME" => name = Some(value),
-            "VERSION" => version = Some(value),
+            "NAME" => release.name = Some(value),
+            "VERSION" => release.version = Some(value),
+            "BUILD_ID" => release.build_id = Some(value),
             _ => {}
         }
     }
-    (name, version)
+    release
 }
 
 /// Whole seconds since boot from /proc/uptime.
@@ -128,6 +141,7 @@ pub fn system_state_xml(system: &SystemState) -> String {
     leaf(&mut xml, "hostname", text(&system.hostname));
     leaf(&mut xml, "os-name", text(&system.os_name));
     leaf(&mut xml, "os-version", text(&system.os_version));
+    leaf(&mut xml, "os-build-id", text(&system.os_build_id));
     leaf(&mut xml, "kernel-release", text(&system.kernel_release));
     leaf(
         &mut xml,

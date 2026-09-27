@@ -45,6 +45,10 @@ module clixon-switch {
      nodes marked 'deviate not-supported', it only skips their must
      checks.";
 
+  revision 2026-09-27 {
+    description
+      "System state: the revision the firmware was built from, os-build-id.";
+  }
   revision 2026-09-17 {
     description
       "SNMPv3 agent, read-only: /snmp of ietf-snmp, the engine ID in use,
@@ -138,6 +142,14 @@ module clixon-switch {
       leaf os-version {
         type string;
         description "VERSION of os-release: the firmware version.";
+      }
+      leaf os-build-id {
+        type string;
+        description
+          "BUILD_ID of os-release: the revision of meta-ethernet-switch-os
+           the firmware was built from. The firmware version starts out as
+           that revision too; once releases are tagged it is the tag, and
+           this is the only leaf naming the commit.";
       }
       leaf kernel-release {
         type string;

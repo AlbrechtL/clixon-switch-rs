@@ -1,19 +1,20 @@
 use switch_model::{
     date_and_time, parse_loadavg, parse_meminfo, parse_os_release, parse_uptime, system_state_xml,
-    SystemState,
+    OsRelease, SystemState,
 };
 
 #[test]
 fn os_release() {
-    let text = "ID=ethernet-switch-os\nNAME=\"Ethernet Switch OS\"\nVERSION=\"6.0.3 (wrynose)\"\nVERSION_ID=6.0.3\n";
+    let text = "ID=ethernet-switch-os\nNAME=\"Ethernet Switch OS\"\nVERSION=\"0.0.0-3eae8394\"\nVERSION_ID=0.0.0-3eae8394\nBUILD_ID=\"3eae8394\"\n";
     assert_eq!(
         parse_os_release(text),
-        (
-            Some("Ethernet Switch OS".to_string()),
-            Some("6.0.3 (wrynose)".to_string())
-        )
+        OsRelease {
+            name: Some("Ethernet Switch OS".to_string()),
+            version: Some("0.0.0-3eae8394".to_string()),
+            build_id: Some("3eae8394".to_string()),
+        }
     );
-    assert_eq!(parse_os_release(""), (None, None));
+    assert_eq!(parse_os_release(""), OsRelease::default());
 }
 
 #[test]
@@ -42,6 +43,7 @@ fn xml() {
     let system = SystemState {
         hostname: Some("gs<1900>".into()),
         os_name: Some("Ethernet Switch OS".into()),
+        os_build_id: Some("3eae8394".into()),
         uptime: Some(42),
         load_average: Some(["0.08".into(), "0.03".into(), "0.01".into()]),
         current_time: Some(0),
@@ -49,7 +51,7 @@ fn xml() {
     };
     assert_eq!(
         system_state_xml(&system),
-        r#"<system xmlns="urn:github:albrechtl:clixon-switch"><state><hostname>gs&lt;1900&gt;</hostname><os-name>Ethernet Switch OS</os-name><current-datetime>1970-01-01T00:00:00Z</current-datetime><uptime>42</uptime><load-average-1>0.08</load-average-1><load-average-5>0.03</load-average-5><load-average-15>0.01</load-average-15></state></system>"#
+        r#"<system xmlns="urn:github:albrechtl:clixon-switch"><state><hostname>gs&lt;1900&gt;</hostname><os-name>Ethernet Switch OS</os-name><os-build-id>3eae8394</os-build-id><current-datetime>1970-01-01T00:00:00Z</current-datetime><uptime>42</uptime><load-average-1>0.08</load-average-1><load-average-5>0.03</load-average-5><load-average-15>0.01</load-average-15></state></system>"#
     );
     assert_eq!(
         system_state_xml(&SystemState::default()),

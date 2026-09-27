@@ -388,7 +388,7 @@ impl SwitchPlugin {
 /// read leave their leaves out.
 fn system_state() -> SystemState {
     let read = |path: &str| std::fs::read_to_string(path).ok();
-    let (os_name, os_version) = read("/etc/os-release")
+    let os_release = read("/etc/os-release")
         .or_else(|| read("/usr/lib/os-release"))
         .map(|text| parse_os_release(&text))
         .unwrap_or_default();
@@ -399,8 +399,9 @@ fn system_state() -> SystemState {
         contact: None,
         location: None,
         hostname: read("/proc/sys/kernel/hostname").map(|h| h.trim().to_string()),
-        os_name,
-        os_version,
+        os_name: os_release.name,
+        os_version: os_release.version,
+        os_build_id: os_release.build_id,
         kernel_release: read("/proc/sys/kernel/osrelease").map(|r| r.trim().to_string()),
         uptime: read("/proc/uptime").and_then(|text| parse_uptime(&text)),
         load_average: read("/proc/loadavg").and_then(|text| parse_loadavg(&text)),

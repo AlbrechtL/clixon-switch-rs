@@ -22,7 +22,7 @@ use std::net::Ipv4Addr;
 
 pub use system::{
     date_and_time, parse_loadavg, parse_meminfo, parse_os_release, parse_uptime, system_state_xml,
-    SystemState,
+    OsRelease, SystemState,
 };
 
 pub use mib::{
