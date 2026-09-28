@@ -17,7 +17,7 @@ discard("Discard uncommitted changes"), discard_changes();
 save("Save the running configuration as startup configuration, kept across reboots"), db_copy("running", "startup");
 quit("Quit"), cli_quit();
 password("Change the admin password"), switch_password();
-factory-reset("Erase all settings and the admin password, and reboot"), switch_factory_reset();
+factory-reset("Erase all settings and the admin account, and reboot"), switch_factory_reset();
 
 no("Negate or remove") debug("Debugging parts of the system"), cli_debug_cli((int32)0);
 debug("Debugging parts of the system"), cli_debug_cli((int32)1);{

@@ -440,9 +440,16 @@ impl BackendPlugin for SwitchPlugin {
                     return Err(RpcError::InvalidValue("new-password is missing".into()));
                 };
                 let current = input.leaf("current-password");
-                let result = self.account.set_password(current.as_deref(), &new);
+                let username = input.leaf("username");
+                let result =
+                    self.account
+                        .set_password(username.as_deref(), current.as_deref(), &new);
                 if result.is_ok() {
-                    h.log(Level::Notice, "the admin password was changed");
+                    let message = match &username {
+                        Some(name) => format!("the admin account {name} was created"),
+                        None => "the admin password was changed".into(),
+                    };
+                    h.log(Level::Notice, &message);
                 }
                 result
             }

@@ -340,31 +340,47 @@ of `/system/config`, host name, the firmware's `NAME` and `VERSION` from
 do both. In the firmware that is lighttpd, which also checks the admin
 password.
 
-### Admin password and factory reset
+### Admin account and factory reset
 
-Two RPCs of `clixon-switch`, run by the plugin as root:
+A fresh switch has no admin account. The first-login setup creates it, with
+a name and a password the user chooses; from then on the admin account is
+the user with UID 1000, whatever its name. Two RPCs of `clixon-switch`, run
+by the plugin as root:
 
-- `set-password` (`current-password`, `new-password`): sets the password of
-  the admin account `cli`. The plugin checks `current-password` against
-  `/etc/shadow` with `crypt()` and the rules for the new one (8 to 128
-  characters, no control characters), then runs
-  `/usr/sbin/ethernet-switch-os-set-password cli` with the new password on
-  stdin. While `/etc/ethernet-switch-os/setup-required` exists (no password
-  set yet), `current-password` is not needed. A missing or wrong one is
-  `access-denied`.
+- `set-password` (`username`, `current-password`, `new-password`):
+  - While `/etc/ethernet-switch-os/setup-required` exists, it creates the
+    admin account. `username` is required and must be free: a lower case
+    letter or `_`, then up to 31 lower case letters, digits, `_` or `-`, and
+    not the name of a user or group in `/etc/passwd` or `/etc/group`.
+    `current-password` is not needed. The plugin runs
+    `/usr/sbin/ethernet-switch-os-set-password --username NAME` with the new
+    password on stdin.
+  - Afterwards it changes the admin's password. `username` is refused (the
+    name stays until a factory reset); `current-password` is checked
+    against `/etc/shadow` with `crypt()`, and a missing or wrong one is
+    `access-denied`. The plugin runs the script without arguments.
+
+  Either way the new password has to follow the rules: 8 to 128
+  characters, no control characters.
 - `factory-reset`: runs `/usr/sbin/ethernet-switch-os-factory-reset --later`,
   which marks the data partition for erasing and reboots two seconds later.
 
 The scripts and the flag file belong to the firmware
 (meta-ethernet-switch-os, recipe `ethernet-switch-os-auth`); elsewhere the
 RPCs fail with the reason. The CLI has both as commands, `password` (reads
-the passwords without echo) and `factory-reset` (asks first), from a small C
+the passwords without echo; after the setup only, since only the admin logs
+in to the CLI) and `factory-reset` (asks first), from a small C
 plugin, `clixon/clixon-switch_cli.c`, that `make install` builds into
 `LIBDIR/clixon-switch/cli`.
 
 ```sh
+# The setup
 curl -H 'Content-Type: application/yang-data+json' \
-  -d '{"clixon-switch:input":{"current-password":"old one","new-password":"new one"}}' \
+  -d '{"clixon-switch:input":{"username":"ops","new-password":"first one"}}' \
+  http://127.0.0.1/restconf/operations/clixon-switch:set-password
+# A change
+curl -H 'Content-Type: application/yang-data+json' \
+  -d '{"clixon-switch:input":{"current-password":"first one","new-password":"new one"}}' \
   http://127.0.0.1/restconf/operations/clixon-switch:set-password
 ```
 
@@ -405,7 +421,7 @@ default.
 | Path | Content |
 |---|---|
 | `crates/switch-model` | RFC 7951 JSON → validated `DesiredState`; state data XML, also of the bridge MIBs; `snmpd.conf`. Pure, host-tested. |
-| `crates/switch-net` | `ActualState`, the planner, `reconcile`, the netlink backend (also the bridge FDB) and a kernel-like fake for tests; the child processes: DHCP client, mstpd, snmpd and clixon_snmp; the admin password check and the scripts behind the RPCs (`account`) |
+| `crates/switch-net` | `ActualState`, the planner, `reconcile`, the netlink backend (also the bridge FDB) and a kernel-like fake for tests; the child processes: DHCP client, mstpd, snmpd and clixon_snmp; the admin account and password checks and the scripts behind the RPCs (`account`) |
 | `crates/clixon-sys` | hand-written declarations for the libclixon 7.8 subset in use |
 | `crates/clixon-plugin` | safe plugin interface: callbacks, RPCs, panics caught, logging, transactions |
 | `crates/clixon-switch-plugin` | the cdylib clixon loads |

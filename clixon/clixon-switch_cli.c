@@ -4,6 +4,10 @@
  * the set-password RPC, "factory-reset" asks for confirmation and sends the
  * factory-reset RPC.
  *
+ * The first-login setup, which creates the admin account, is not here: it
+ * happens in the web interface or over RESTCONF, before anyone can log in to
+ * the CLI.
+ *
  * clixon_cli loads it from CLICON_CLI_DIR; the clispec names the callbacks.
  * C rather than Rust: the CLI API is a separate set of callbacks, and a
  * second Rust library would carry its own copy of std into the flash.
@@ -67,41 +71,6 @@ read_secret(const char *prompt,
     return 0;
 }
 
-/*! Whether the admin password still has to be set (system/state/setup-required)
- *
- * @retval  1   Yes
- * @retval  0   No
- * @retval -1   Error
- */
-static int
-setup_required(clixon_handle h)
-{
-    int    retval = -1;
-    cvec  *nsc = NULL;
-    cxobj *xret = NULL;
-    cxobj *x;
-    char  *body;
-
-    if ((nsc = xml_nsctx_init("sw", SWITCH_NS)) == NULL)
-        goto done;
-    if (clicon_rpc_get(h, "/sw:system/sw:state/sw:setup-required", nsc,
-                       CONTENT_NONCONFIG, -1, NULL, &xret) < 0)
-        goto done;
-    if ((x = xpath_first(xret, NULL, "//rpc-error")) != NULL){
-        clixon_err_netconf(h, OE_NETCONF, 0, x, "Get setup-required");
-        goto done;
-    }
-    x = xpath_first(xret, NULL, "//setup-required");
-    body = x ? xml_body(x) : NULL;
-    retval = body != NULL && strcmp(body, "true") == 0;
- done:
-    if (xret)
-        xml_free(xret);
-    if (nsc)
-        cvec_free(nsc);
-    return retval;
-}
-
 /*! Sends an RPC of the clixon-switch module and prints its error, if any
  *
  * @param[in]  h      Clixon handle
@@ -160,9 +129,8 @@ append_leaf(cbuf       *cb,
 
 /*! CLI callback: change the admin password
  *
- * Asks for the current password, unless the first-login setup is pending,
- * and the new one twice. The backend checks the rules and the current
- * password.
+ * Asks for the current password and the new one twice. The backend checks
+ * the rules and the current password.
  * @retval  0   Password changed
  * @retval -1   Not changed; the reason is printed
  */
@@ -172,17 +140,12 @@ switch_password(clixon_handle h,
                 cvec         *argv)
 {
     int   retval = -1;
-    int   setup;
-    char  current[LINE_MAX_LEN] = "";
+    char  current[LINE_MAX_LEN];
     char  new1[LINE_MAX_LEN];
     char  new2[LINE_MAX_LEN];
     cbuf *cb = NULL;
 
-    if ((setup = setup_required(h)) < 0)
-        goto done;
-    if (setup)
-        fprintf(stdout, "Set the admin password. It is used for SSH, the serial console and the web interface.\n");
-    else if (read_secret("Current password: ", current, sizeof(current)) < 0)
+    if (read_secret("Current password: ", current, sizeof(current)) < 0)
         goto done;
     if (read_secret("New password: ", new1, sizeof(new1)) < 0)
         goto done;
@@ -202,7 +165,7 @@ switch_password(clixon_handle h,
     }
     if ((cb = cbuf_new()) == NULL)
         goto done;
-    if (!setup && append_leaf(cb, "current-password", current) < 0)
+    if (append_leaf(cb, "current-password", current) < 0)
         goto done;
     if (append_leaf(cb, "new-password", new1) < 0)
         goto done;
@@ -233,7 +196,7 @@ switch_factory_reset(clixon_handle h,
 {
     char answer[16];
 
-    fprintf(stdout, "All settings, the admin password, the SSH host keys and the HTTPS certificate\n"
+    fprintf(stdout, "All settings, the admin account, the SSH host keys and the HTTPS certificate\n"
             "will be erased, and the switch reboots. Continue? [y/N] ");
     fflush(stdout);
     if (fgets(answer, sizeof(answer), stdin) == NULL ||
