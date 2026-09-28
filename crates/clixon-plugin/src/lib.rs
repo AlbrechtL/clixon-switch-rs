@@ -4,6 +4,9 @@
 //! [`export_backend_plugin!`], which defines the `clixon_plugin_init` symbol
 //! that clixon_backend looks up after dlopen().
 //!
+//! RPCs the plugin names in [`BackendPlugin::rpcs`] are registered with
+//! clixon at load time and handed to [`BackendPlugin::rpc`].
+//!
 //! Every callback runs inside `catch_unwind`. A returned [`Error`] or a panic
 //! is reported through `clixon_err` and fails the callback with -1; in a
 //! transaction clixon turns that into an rpc-error for the client, and the
@@ -74,6 +77,19 @@ impl Handle {
                 .to_string_lossy()
                 .into_owned(),
         )
+    }
+
+    /// Registers [`__private::rpc`] as the handler of the RPC `name` in
+    /// namespace `ns`.
+    fn register_rpc(self, ns: &str, name: &str) -> bool {
+        let ns = c_string(ns);
+        // The name comes back as regarg on every call, so it lives for the
+        // lifetime of the process, like the registration.
+        let regarg = c_string(name).into_raw();
+        let rc = unsafe {
+            sys::rpc_callback_register(self.0, __private::rpc, regarg.cast(), ns.as_ptr(), regarg)
+        };
+        rc >= 0
     }
 
     /// Sets the clixon error that the failing callback reports.
@@ -205,8 +221,63 @@ impl StateTree {
     }
 }
 
+/// The input of an RPC: the children of its element below `<rpc>`.
+pub struct RpcInput(*mut sys::cxobj);
+
+impl RpcInput {
+    /// The value of the input leaf `name`. None if it is missing or empty.
+    pub fn leaf(&self, name: &str) -> Option<String> {
+        let name = c_string(name);
+        let body = unsafe { sys::xml_find_body(self.0, name.as_ptr()) };
+        if body.is_null() {
+            return None;
+        }
+        Some(
+            unsafe { CStr::from_ptr(body) }
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+}
+
+/// How an RPC failed. The client gets it as an rpc-error of type
+/// application, with the message as error-message.
+#[derive(Debug)]
+pub enum RpcError {
+    /// error-tag invalid-value: the input is not acceptable.
+    InvalidValue(String),
+    /// error-tag access-denied: the caller may not do this.
+    AccessDenied(String),
+    /// error-tag operation-failed: anything else.
+    Failed(String),
+}
+
+impl<E: std::error::Error> From<E> for RpcError {
+    fn from(e: E) -> Self {
+        RpcError::Failed(e.to_string())
+    }
+}
+
 /// Callbacks of a backend plugin. All have a no-op default.
 pub trait BackendPlugin: Send {
+    /// The RPCs the plugin handles, as (YANG namespace, RPC name). Each is
+    /// registered with clixon once, when the plugin is loaded, and handed to
+    /// [`BackendPlugin::rpc`].
+    fn rpcs(&self) -> Vec<(&'static str, &'static str)> {
+        Vec::new()
+    }
+
+    /// Runs the RPC `name`, one of [`BackendPlugin::rpcs`]. Ok replies
+    /// `<ok/>`.
+    fn rpc(
+        &mut self,
+        _h: Handle,
+        name: &str,
+        _input: &RpcInput,
+    ) -> std::result::Result<(), RpcError> {
+        Err(RpcError::Failed(format!("{name} is not implemented")))
+    }
+
     /// Called once, after all plugins are loaded and before the startup
     /// configuration is committed.
     fn start(&mut self, _h: Handle) -> Result<()> {
@@ -340,6 +411,13 @@ pub mod __private {
             *dst = *src as c_char;
         }
 
+        for (ns, rpc_name) in plugin.rpcs() {
+            if !handle.register_rpc(ns, rpc_name) {
+                handle.error(&name, &format!("init: cannot register RPC {rpc_name}"));
+                return ptr::null_mut();
+            }
+        }
+
         *PLUGIN.lock().unwrap_or_else(PoisonError::into_inner) = Some(Registered { name, plugin });
         // clixon keeps using the struct for the lifetime of the process.
         Box::into_raw(api)
@@ -395,6 +473,65 @@ pub mod __private {
 
     unsafe extern "C" fn trans_revert(h: sys::clixon_handle, td: sys::transaction_data) -> c_int {
         call(h, "revert", |p, h| p.trans_revert(h, &Transaction(td)))
+    }
+
+    /// Replies `<ok/>`, or an rpc-error for an [`RpcError`]. Only a panic,
+    /// or clixon failing to write the reply, fails the callback.
+    pub(crate) unsafe extern "C" fn rpc(
+        h: sys::clixon_handle,
+        xn: *mut sys::cxobj,
+        cbret: *mut sys::cbuf,
+        _arg: *mut std::ffi::c_void,
+        regarg: *mut std::ffi::c_void,
+    ) -> c_int {
+        let handle = Handle(h);
+        let name = unsafe { CStr::from_ptr(regarg.cast::<c_char>()) }.to_string_lossy();
+        let mut guard = PLUGIN.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(registered) = guard.as_mut() else {
+            return -1;
+        };
+
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
+            registered.plugin.rpc(handle, &name, &RpcInput(xn))
+        }));
+        let rc = match outcome {
+            Ok(Ok(())) => {
+                let reply = c_string(&format!(
+                    r#"<rpc-reply xmlns="{}"><ok/></rpc-reply>"#,
+                    sys::NETCONF_BASE_NAMESPACE
+                ));
+                unsafe { sys::cbuf_append_str(cbret, reply.as_ptr()) }
+            }
+            Ok(Err(e)) => {
+                let application = c"application".as_ptr();
+                match e {
+                    RpcError::InvalidValue(m) => unsafe {
+                        sys::netconf_invalid_value(cbret, application, c_string(&m).as_ptr())
+                    },
+                    RpcError::AccessDenied(m) => unsafe {
+                        sys::netconf_access_denied(cbret, application, c_string(&m).as_ptr())
+                    },
+                    RpcError::Failed(m) => unsafe {
+                        sys::netconf_operation_failed(
+                            cbret,
+                            application,
+                            c"%s".as_ptr(),
+                            c_string(&m).as_ptr(),
+                        )
+                    },
+                }
+            }
+            Err(payload) => {
+                let message = format!("rpc {name}: panic: {}", panic_message(&*payload));
+                handle.error(&registered.name, &message);
+                return -1;
+            }
+        };
+        if rc < 0 {
+            -1
+        } else {
+            0
+        }
     }
 
     unsafe extern "C" fn statedata(

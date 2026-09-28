@@ -6,8 +6,9 @@
 //! When moving to another clixon version, compare against
 //! `clixon/clixon_plugin.h` (struct clixon_plugin_api),
 //! `clixon/clixon_backend_transaction.h`, `clixon/clixon_json.h`,
-//! `clixon/clixon_xml_io.h`, `clixon/clixon_log.h`, `clixon/clixon_err.h`,
-//! `clixon/clixon_options.h` and `cligen/cligen_buf.h`.
+//! `clixon/clixon_xml_io.h`, `clixon/clixon_xml.h`, `clixon/clixon_log.h`,
+//! `clixon/clixon_err.h`, `clixon/clixon_options.h`,
+//! `clixon/clixon_netconf_lib.h` and `cligen/cligen_buf.h`.
 
 #![allow(non_camel_case_types)]
 
@@ -57,6 +58,20 @@ pub type plgstatedata_t = unsafe extern "C" fn(
     xconfig: *mut cxobj,
 ) -> c_int;
 pub type trans_cb_t = unsafe extern "C" fn(h: clixon_handle, td: transaction_data) -> c_int;
+
+/// `clicon_rpc_cb` (clixon_plugin.h). `xn` is the request's element below
+/// `<rpc>`, the reply or rpc-error goes into `cbret`, `regarg` is the `arg`
+/// given to `rpc_callback_register`.
+pub type clicon_rpc_cb = unsafe extern "C" fn(
+    h: clixon_handle,
+    xn: *mut cxobj,
+    cbret: *mut cbuf,
+    arg: *mut c_void,
+    regarg: *mut c_void,
+) -> c_int;
+
+/// `NETCONF_BASE_NAMESPACE` (clixon_netconf_lib.h).
+pub const NETCONF_BASE_NAMESPACE: &str = "urn:ietf:params:xml:ns:netconf:base:1.0";
 
 /// A callback slot this crate never fills. Only its size matters: it is a
 /// function pointer, and it stays NULL.
@@ -110,6 +125,38 @@ extern "C" {
     pub fn cbuf_free(cb: *mut cbuf);
     pub fn cbuf_get(cb: *mut cbuf) -> *mut c_char;
     pub fn cbuf_len(cb: *mut cbuf) -> usize;
+    pub fn cbuf_append_str(cb: *mut cbuf, str_: *const c_char) -> c_int;
+
+    // clixon_plugin.h
+    pub fn rpc_callback_register(
+        h: clixon_handle,
+        cb: clicon_rpc_cb,
+        arg: *mut c_void,
+        ns: *const c_char,
+        name: *const c_char,
+    ) -> c_int;
+
+    // clixon_xml.h. NULL if there is no such child or it has no body.
+    pub fn xml_find_body(xn: *mut cxobj, name: *const c_char) -> *mut c_char;
+
+    // clixon_netconf_lib.h: write an <rpc-reply><rpc-error> into cb.
+    // netconf_operation_failed is variadic in C; always pass "%s".
+    pub fn netconf_invalid_value(
+        cb: *mut cbuf,
+        type_: *const c_char,
+        message: *const c_char,
+    ) -> c_int;
+    pub fn netconf_access_denied(
+        cb: *mut cbuf,
+        type_: *const c_char,
+        message: *const c_char,
+    ) -> c_int;
+    pub fn netconf_operation_failed(
+        cb: *mut cbuf,
+        type_: *const c_char,
+        message: *const c_char,
+        ...
+    ) -> c_int;
 
     // clixon_backend_transaction.h
     pub fn transaction_src(td: transaction_data) -> *mut cxobj;

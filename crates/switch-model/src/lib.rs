@@ -49,7 +49,7 @@ pub const BRIDGE_NAME: &str = "br-lan";
 const MAX_IFNAME_LEN: usize = 15;
 
 /// Namespace of the clixon-switch YANG module.
-const SWITCH_NS: &str = "urn:github:albrechtl:clixon-switch";
+pub const SWITCH_NS: &str = "urn:github:albrechtl:clixon-switch";
 
 // ---------------------------------------------------------------------------
 // RFC 7951 JSON

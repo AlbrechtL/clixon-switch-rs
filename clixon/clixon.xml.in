@@ -13,6 +13,8 @@
   <CLICON_CLI_LINESCROLLING>0</CLICON_CLI_LINESCROLLING>
   <CLICON_CLI_TAB_MODE>0</CLICON_CLI_TAB_MODE>
   <CLICON_CLISPEC_DIR>@LIBDIR@/clixon-switch/clispec</CLICON_CLISPEC_DIR>
+  <!-- The "password" and "factory-reset" commands. -->
+  <CLICON_CLI_DIR>@LIBDIR@/clixon-switch/cli</CLICON_CLI_DIR>
   <CLICON_BACKEND_DIR>@LIBDIR@/clixon-switch/backend</CLICON_BACKEND_DIR>
   <CLICON_SOCK>@RUNSTATEDIR@/clixon-switch.sock</CLICON_SOCK>
   <CLICON_SOCK_GROUP>clicon</CLICON_SOCK_GROUP>
@@ -51,13 +53,15 @@
   <CLICON_HTTP_DATA_ROOT>@HTTP_DATA_ROOT@</CLICON_HTTP_DATA_ROOT>
   <restconf>
     <enable>true</enable>
-    <!-- No authentication and no TLS: proof of concept only. -->
+    <!-- No authentication and no TLS here: clixon_restconf listens on
+         @RESTCONF_ADDRESS@ only. A reverse proxy in front of it (lighttpd
+         in the firmware) does TLS and checks the password. -->
     <auth-type>none</auth-type>
     <pretty>true</pretty>
     <enable-http-data>true</enable-http-data>
     <socket>
       <namespace>default</namespace>
-      <address>0.0.0.0</address>
+      <address>@RESTCONF_ADDRESS@</address>
       <port>@RESTCONF_PORT@</port>
       <ssl>false</ssl>
     </socket>

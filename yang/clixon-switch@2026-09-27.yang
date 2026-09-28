@@ -47,7 +47,9 @@ module clixon-switch {
 
   revision 2026-09-27 {
     description
-      "System state: the revision the firmware was built from, os-build-id.";
+      "System state: the revision the firmware was built from, os-build-id.
+       The admin password: setup-required, and the RPCs set-password and
+       factory-reset.";
   }
   revision 2026-09-17 {
     description
@@ -196,7 +198,42 @@ module clixon-switch {
           "RAM available to new processes without swapping
            (MemAvailable).";
       }
+      leaf setup-required {
+        type boolean;
+        description
+          "True until the admin password is set for the first time, after
+           the first boot or a factory reset. Until then, logins ask for a
+           new password, and set-password needs no current-password.";
+      }
     }
+  }
+
+  rpc set-password {
+    description
+      "Sets the admin password, for SSH, the serial console and the web
+       interface. Fails with access-denied if current-password is missing
+       or wrong, unless setup-required is true.";
+    input {
+      leaf current-password {
+        type string;
+        description "The password now. Not needed during the setup.";
+      }
+      leaf new-password {
+        type string {
+          length "8..128";
+        }
+        mandatory true;
+        description "The new password. No control characters.";
+      }
+    }
+  }
+
+  rpc factory-reset {
+    description
+      "Erases the whole data partition on the next boot and reboots now:
+       the saved configuration, the admin password (setup-required is true
+       again), the SSH host keys and the HTTPS certificate. The firmware
+       stays.";
   }
 
   grouping port-based-vlan-group-config {

@@ -47,11 +47,12 @@ fn xml() {
         uptime: Some(42),
         load_average: Some(["0.08".into(), "0.03".into(), "0.01".into()]),
         current_time: Some(0),
+        setup_required: Some(true),
         ..SystemState::default()
     };
     assert_eq!(
         system_state_xml(&system),
-        r#"<system xmlns="urn:github:albrechtl:clixon-switch"><state><hostname>gs&lt;1900&gt;</hostname><os-name>Ethernet Switch OS</os-name><os-build-id>3eae8394</os-build-id><current-datetime>1970-01-01T00:00:00Z</current-datetime><uptime>42</uptime><load-average-1>0.08</load-average-1><load-average-5>0.03</load-average-5><load-average-15>0.01</load-average-15></state></system>"#
+        r#"<system xmlns="urn:github:albrechtl:clixon-switch"><state><hostname>gs&lt;1900&gt;</hostname><os-name>Ethernet Switch OS</os-name><os-build-id>3eae8394</os-build-id><current-datetime>1970-01-01T00:00:00Z</current-datetime><uptime>42</uptime><load-average-1>0.08</load-average-1><load-average-5>0.03</load-average-5><load-average-15>0.01</load-average-15><setup-required>true</setup-required></state></system>"#
     );
     assert_eq!(
         system_state_xml(&SystemState::default()),

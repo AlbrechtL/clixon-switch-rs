@@ -34,6 +34,8 @@ pub struct SystemState {
     pub memory_available: Option<u64>,
     /// Seconds since the Unix epoch.
     pub current_time: Option<u64>,
+    /// Whether the admin password still has to be set.
+    pub setup_required: Option<bool>,
 }
 
 /// The fields of an os-release file the switch reports.
@@ -155,6 +157,7 @@ pub fn system_state_xml(system: &SystemState) -> String {
     leaf(&mut xml, "load-average-15", load.map(|l| &l[2]));
     leaf(&mut xml, "memory-total", system.memory_total);
     leaf(&mut xml, "memory-available", system.memory_available);
+    leaf(&mut xml, "setup-required", system.setup_required);
     xml.push_str("</state></system>");
     xml
 }

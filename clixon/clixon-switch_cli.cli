@@ -1,5 +1,8 @@
 CLICON_MODE="clixon-switch";
 CLICON_PROMPT="switch> ";
+# Callbacks not in libclixon_cli come from this plugin (clixon-switch_cli.c,
+# installed in CLICON_CLI_DIR): its file name without ".so".
+CLICON_PLUGIN="clixon-switch_cli";
 
 # Commands generated from the data model (see autocli.xml)
 set @datamodel, cli_set();
@@ -13,6 +16,8 @@ commit("Apply the candidate configuration (not persistent until save)"), cli_com
 discard("Discard uncommitted changes"), discard_changes();
 save("Save the running configuration as startup configuration, kept across reboots"), db_copy("running", "startup");
 quit("Quit"), cli_quit();
+password("Change the admin password"), switch_password();
+factory-reset("Erase all settings and the admin password, and reboot"), switch_factory_reset();
 
 no("Negate or remove") debug("Debugging parts of the system"), cli_debug_cli((int32)0);
 debug("Debugging parts of the system"), cli_debug_cli((int32)1);{

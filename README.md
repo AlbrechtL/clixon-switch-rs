@@ -332,8 +332,41 @@ SMI defaults in state data. meta-ethernet-switch-os carries them as patches
 
 `/system/state` (`clixon-switch`) is state data: the contact and location
 of `/system/config`, host name, the firmware's `NAME` and `VERSION` from
-`/etc/os-release`, kernel release, clock, uptime, load averages and memory.
-It exists mainly for a status page to read.
+`/etc/os-release`, kernel release, clock, uptime, load averages, memory and
+`setup-required`. It exists mainly for a status page to read.
+
+`clixon_restconf` listens on `RESTCONF_ADDRESS` (Makefile, default
+`127.0.0.1`) without authentication or TLS: something in front of it has to
+do both. In the firmware that is lighttpd, which also checks the admin
+password.
+
+### Admin password and factory reset
+
+Two RPCs of `clixon-switch`, run by the plugin as root:
+
+- `set-password` (`current-password`, `new-password`): sets the password of
+  the admin account `cli`. The plugin checks `current-password` against
+  `/etc/shadow` with `crypt()` and the rules for the new one (8 to 128
+  characters, no control characters), then runs
+  `/usr/sbin/ethernet-switch-os-set-password cli` with the new password on
+  stdin. While `/etc/ethernet-switch-os/setup-required` exists (no password
+  set yet), `current-password` is not needed. A missing or wrong one is
+  `access-denied`.
+- `factory-reset`: runs `/usr/sbin/ethernet-switch-os-factory-reset --later`,
+  which marks the data partition for erasing and reboots two seconds later.
+
+The scripts and the flag file belong to the firmware
+(meta-ethernet-switch-os, recipe `ethernet-switch-os-auth`); elsewhere the
+RPCs fail with the reason. The CLI has both as commands, `password` (reads
+the passwords without echo) and `factory-reset` (asks first), from a small C
+plugin, `clixon/clixon-switch_cli.c`, that `make install` builds into
+`LIBDIR/clixon-switch/cli`.
+
+```sh
+curl -H 'Content-Type: application/yang-data+json' \
+  -d '{"clixon-switch:input":{"current-password":"old one","new-password":"new one"}}' \
+  http://127.0.0.1/restconf/operations/clixon-switch:set-password
+```
 
 `clixon_restconf` serves static files at `/` (clixon's `http-data`), on the
 same origin as `/restconf`, from `HTTP_DATA_ROOT` in `clixon.xml`. **This
@@ -347,7 +380,7 @@ whose `ethernet-switch-os-webui` recipe installs a read-only status page.
 
 ```sh
 curl -H 'Accept: application/yang-data+json' \
-  http://192.168.1.1/restconf/data/clixon-switch:system
+  http://127.0.0.1/restconf/data/clixon-switch:system
 ```
 
 ### Persistence
@@ -358,7 +391,8 @@ NETCONF/RESTCONF `copy-config` from running to startup, makes it persistent.
 Before `clixon_backend` starts, `prepare-datastore` sets up the datastore
 directory:
 - It creates `startup_db` from the factory default if there is none yet.
-  Deleting `startup_db` is a factory reset.
+  Deleting `startup_db` resets the configuration (the firmware's factory
+  reset erases everything else too, see above).
 - It always installs the factory default as `failsafe_db`. clixon falls back
   to it when `startup_db` fails to commit.
 
@@ -371,11 +405,11 @@ default.
 | Path | Content |
 |---|---|
 | `crates/switch-model` | RFC 7951 JSON → validated `DesiredState`; state data XML, also of the bridge MIBs; `snmpd.conf`. Pure, host-tested. |
-| `crates/switch-net` | `ActualState`, the planner, `reconcile`, the netlink backend (also the bridge FDB) and a kernel-like fake for tests; the child processes: DHCP client, mstpd, snmpd and clixon_snmp |
+| `crates/switch-net` | `ActualState`, the planner, `reconcile`, the netlink backend (also the bridge FDB) and a kernel-like fake for tests; the child processes: DHCP client, mstpd, snmpd and clixon_snmp; the admin password check and the scripts behind the RPCs (`account`) |
 | `crates/clixon-sys` | hand-written declarations for the libclixon 7.8 subset in use |
-| `crates/clixon-plugin` | safe plugin interface: callbacks, panics caught, logging, transactions |
+| `crates/clixon-plugin` | safe plugin interface: callbacks, RPCs, panics caught, logging, transactions |
 | `crates/clixon-switch-plugin` | the cdylib clixon loads |
-| `clixon/` | `clixon.xml` template, `autocli.xml`, CLI spec |
+| `clixon/` | `clixon.xml` template, `autocli.xml`, CLI spec and its C plugin (`password`, `factory-reset`) |
 | `scripts/` | factory default generator, `prepare-datastore`, udhcpc script, `/sbin/bridge-stp`, YANG vendoring, MIB translation, `snmp-localize-key` |
 | `yang/` | the main module; `vendor/` imported modules; `mib/` MIBs translated to YANG |
 | `dev/` | development container with clixon and mstpd at the Yocto recipes' revisions and with the layer's patches, net-snmp, smidump |

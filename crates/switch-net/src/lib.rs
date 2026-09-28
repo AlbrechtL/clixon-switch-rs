@@ -7,6 +7,7 @@
 //! to observe than to predict (e.g. enabling VLAN filtering on a bridge that
 //! already has ports).
 
+pub mod account;
 pub mod dhcp;
 pub mod fake;
 pub mod netlink;

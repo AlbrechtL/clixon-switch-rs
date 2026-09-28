@@ -18,6 +18,9 @@ DATADIR ?= $(PREFIX)/share
 LOCALSTATEDIR ?= $(PREFIX)/var
 RUNSTATEDIR ?= $(LOCALSTATEDIR)/run
 RESTCONF_PORT ?= 80
+# Loopback only: clixon_restconf does no authentication, a reverse proxy in
+# front of it does.
+RESTCONF_ADDRESS ?= 127.0.0.1
 
 # Where clixon_restconf serves static files from (http-data). This repository
 # ships no pages; it only creates the directory, because clixon resolves the
@@ -33,11 +36,21 @@ LAN_ADDRESS ?= 192.168.1.1/24
 PLUGIN ?= target/release/libclixon_switch_plugin.so
 BUILDDIR ?= build
 
+# The CLI plugin (clixon/clixon-switch_cli.c). It links the clixon libraries
+# for the same reason as the backend plugin (crates/clixon-sys/build.rs).
+CC ?= cc
+CFLAGS ?= -O2 -Wall
+CLI_PLUGIN = $(BUILDDIR)/$(APP)_cli.so
+
 INSTALL ?= install
 
 .PHONY: all install install-mibs clean
 
-all: $(BUILDDIR)/clixon.xml $(BUILDDIR)/factory-default.xml
+all: $(BUILDDIR)/clixon.xml $(BUILDDIR)/factory-default.xml $(CLI_PLUGIN)
+
+$(CLI_PLUGIN): clixon/$(APP)_cli.c Makefile
+	mkdir -p $(BUILDDIR)
+	$(CC) $(CFLAGS) -fPIC -shared $(LDFLAGS) -o $@ $< -lclixon_cli -lclixon -lcligen
 
 $(BUILDDIR)/clixon.xml: clixon/clixon.xml.in Makefile
 	mkdir -p $(BUILDDIR)
@@ -47,6 +60,7 @@ $(BUILDDIR)/clixon.xml: clixon/clixon.xml.in Makefile
 	    -e 's|@LOCALSTATEDIR@|$(LOCALSTATEDIR)|g' \
 	    -e 's|@RUNSTATEDIR@|$(RUNSTATEDIR)|g' \
 	    -e 's|@RESTCONF_PORT@|$(RESTCONF_PORT)|g' \
+	    -e 's|@RESTCONF_ADDRESS@|$(RESTCONF_ADDRESS)|g' \
 	    -e 's|@HTTP_DATA_ROOT@|$(HTTP_DATA_ROOT)|g' \
 	    $< > $@
 
@@ -58,6 +72,7 @@ install: all
 	$(INSTALL) -D -m 0644 $(BUILDDIR)/clixon.xml $(DESTDIR)$(SYSCONFDIR)/clixon.xml
 	$(INSTALL) -D -m 0644 clixon/autocli.xml $(DESTDIR)$(SYSCONFDIR)/clixon/$(APP)/autocli.xml
 	$(INSTALL) -D -m 0644 clixon/$(APP)_cli.cli $(DESTDIR)$(LIBDIR)/$(APP)/clispec/$(APP)_cli.cli
+	$(INSTALL) -D -m 0755 $(CLI_PLUGIN) $(DESTDIR)$(LIBDIR)/$(APP)/cli/$(APP)_cli.so
 	$(INSTALL) -D -m 0644 $(PLUGIN) $(DESTDIR)$(LIBDIR)/$(APP)/backend/$(APP)_backend.so
 	$(INSTALL) -D -m 0755 scripts/prepare-datastore.sh $(DESTDIR)$(LIBDIR)/$(APP)/prepare-datastore
 	$(INSTALL) -D -m 0755 scripts/udhcpc-script.sh $(DESTDIR)$(LIBDIR)/$(APP)/udhcpc-script

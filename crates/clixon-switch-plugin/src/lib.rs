@@ -7,19 +7,25 @@
 //! stop mstpd and configure it (see `switch_net::stp`), the DHCP client
 //! (see `switch_net::dhcp`), and snmpd with clixon_snmp (see
 //! `switch_net::snmp`).
+//!
+//! The RPCs set-password and factory-reset run the firmware's scripts
+//! (see `switch_net::account`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clixon_plugin::{
-    export_backend_plugin, BackendPlugin, Error, Handle, Level, Result, StateTree, Transaction,
+    export_backend_plugin, BackendPlugin, Error, Handle, Level, Result, RpcError, RpcInput,
+    StateTree, Transaction,
 };
 use switch_model::{
     bridge_mib_xml, default_engine_id, parse_loadavg, parse_mac, parse_meminfo, parse_os_release,
     parse_uptime, snmp_state_xml, snmpd_conf, state_xml, system_state_xml, validate, AddressOrigin,
     BridgeInfo, DesiredState, InterfaceState, MibModules, PortVlans, SnmpdParams, SystemState,
+    SWITCH_NS,
 };
+use switch_net::account::{AccountConfig, AccountError};
 use switch_net::dhcp::{self, ChildProcesses, DhcpClients, DhcpConfig, Event};
 use switch_net::netlink::NetlinkBackend;
 use switch_net::snmp::{self as snmp, SnmpConfig, Snmpd};
@@ -61,6 +67,7 @@ struct SwitchPlugin {
     engine_id: Option<Vec<u8>>,
     /// The configuration last applied, for state data.
     applied: DesiredState,
+    account: AccountConfig,
 }
 
 /// Where the DHCP client's files are: the script next to the plugin's
@@ -185,6 +192,7 @@ impl SwitchPlugin {
             snmp: Snmpd::new(snmp_config(h)?, ChildProcesses::default()),
             engine_id: None,
             applied: DesiredState::default(),
+            account: AccountConfig::default(),
         })
     }
 
@@ -411,10 +419,49 @@ fn system_state() -> SystemState {
             .duration_since(UNIX_EPOCH)
             .ok()
             .map(|d| d.as_secs()),
+        setup_required: None,
     }
 }
 
 impl BackendPlugin for SwitchPlugin {
+    fn rpcs(&self) -> Vec<(&'static str, &'static str)> {
+        vec![(SWITCH_NS, "set-password"), (SWITCH_NS, "factory-reset")]
+    }
+
+    fn rpc(
+        &mut self,
+        h: Handle,
+        name: &str,
+        input: &RpcInput,
+    ) -> std::result::Result<(), RpcError> {
+        let result = match name {
+            "set-password" => {
+                let Some(new) = input.leaf("new-password") else {
+                    return Err(RpcError::InvalidValue("new-password is missing".into()));
+                };
+                let current = input.leaf("current-password");
+                let result = self.account.set_password(current.as_deref(), &new);
+                if result.is_ok() {
+                    h.log(Level::Notice, "the admin password was changed");
+                }
+                result
+            }
+            "factory-reset" => {
+                h.log(Level::Notice, "factory reset requested: rebooting");
+                self.account.factory_reset()
+            }
+            _ => return Err(RpcError::Failed(format!("unknown RPC {name}"))),
+        };
+        result.map_err(|e| {
+            h.log(Level::Warning, &format!("{name}: {e}"));
+            match e {
+                AccountError::Invalid(m) => RpcError::InvalidValue(m),
+                AccountError::Denied(m) => RpcError::AccessDenied(m),
+                AccountError::Failed(m) => RpcError::Failed(m),
+            }
+        })
+    }
+
     fn start(&mut self, h: Handle) -> Result<()> {
         // Loopback and the DSA conduit come up here already, independent of
         // whether the startup configuration commits.
@@ -485,6 +532,7 @@ impl BackendPlugin for SwitchPlugin {
         }
         // Independent of the configuration, so also before the first commit.
         let mut system = system_state();
+        system.setup_required = Some(self.account.setup_required());
         system.contact = self.applied.system.contact.clone();
         system.location = self.applied.system.location.clone();
         state.add_xml(&system_state_xml(&system))?;
